@@ -1,170 +1,170 @@
 # 🚩 Challenge: 🚢 Zero to Production
 
-A hands-on deployment course in three levels, bilingual ([中文](tutorials/zh/README.md) / [English](tutorials/en/README.md)). You start with your very first SSH login on a $5 VPS and finish with push-to-deploy, automatic rollback, blue-green switching, short-lived credentials, and a disaster-recovery drill with real RPO/RTO numbers.
+A hands-on, three-stage course in modern application deployment, available in both [中文](tutorials/zh/README.md) and [English](tutorials/en/README.md). You start with your very first SSH login on a $5 VPS and finish with automated push-to-deploy, self-healing rollbacks, blue-green zero-downtime switching, short-lived SSH certificates, and a live disaster-recovery drill backed by stopwatch-measured RPO/RTO numbers.
 
-🌟 **The final deliverable**: your app running 24/7 on a real server, behind your own domain with HTTPS. Updates ship with `git push`; a broken release rolls itself back before you've finished reading the alert; and when someone says "we should move to Kubernetes", you answer with measurements from your own drills — not vibes.
+🌟 **The final deliverable**: Your application running 24/7 on a real Linux server behind your own domain and automated HTTPS. Every `git push` to `main` ships safely; a broken release rolls itself back before you even finish reading the alert; and when someone suggests "we should move to Kubernetes," you can answer with empirical measurements from your own drills—not guesswork.
 
-🧑‍🎓 **No ops experience required.** Every concept is explained the first time it appears, every chapter ends with a checkpoint, and the levels are a staircase on purpose: each one exists because the previous level's approach will eventually hurt you.
+🧑‍🎓 **No prior ops experience required.** Every concept is introduced in plain language the moment it first appears, every chapter closes with a verifiable checkpoint, and the three stages form a deliberate staircase: each stage exists because the previous stage's shortcuts eventually break under real-world pressure.
 
-💬 Stuck at any point? This repo ships with a **built-in AI teaching assistant** — open the repo root in Claude Code, Cursor, or Copilot and ask in plain language. See [🤖 AI-Guided Learning Mode](#-ai-guided-learning-mode).
+💬 **Stuck at any step?** This repository includes a **built-in AI teaching assistant**. Open the repo root in Claude Code, Cursor, or GitHub Copilot and ask questions in plain language. See [🤖 AI-Guided Learning Mode](#-ai-guided-learning-mode).
 
 ---
 
-## Checkpoint 0: 📦 Environment
+## Checkpoint 0: 📦 Environment Setup
 
-Before you begin, you need:
+Before you begin, make sure you have:
 
 - [Node.js ≥ 24](https://nodejs.org/) and [pnpm](https://pnpm.io/installation)
-- [Docker](https://www.docker.com/products/docker-desktop/) (the demo app runs Postgres via `docker compose`)
-- A **lab VPS**: ~$4–6/month (add an hourly-billed box for Advanced experiments — usually <$1 total, destroy it afterwards)
-- A **domain**: ~$1–10/year
-- 13–21 hours across the three levels
+- [Docker](https://www.docker.com/products/docker-desktop/) (the companion app runs PostgreSQL locally via `docker compose`)
+- A **lab VPS**: ~$4–6/month (plus an optional hourly-billed box for the Advanced experiments—typically under $1 total before you delete it)
+- A **domain name**: ~$1–10/year
+- **13–21 hours** total across all three stages
 
-Then download the course and run the demo app locally:
+Clone the repository and spin up the companion app locally:
 
 ```sh
 git clone https://github.com/Donnywork/deploy_tutorial.git
 cd deploy_tutorial/demo-app
 pnpm install
-cp .env.example .env        # fill POSTGRES_PASSWORD with anything random
+cp .env.example .env        # set POSTGRES_PASSWORD to any random string
 docker compose up -d db
 pnpm run migrate
 pnpm run build
 pnpm run dev                # http://127.0.0.1:3000
 ```
 
-📱 Open [http://127.0.0.1:3000/health/ready](http://127.0.0.1:3000/health/ready) — you should see a JSON status `ok`.
+📱 Open [http://127.0.0.1:3000/health/ready](http://127.0.0.1:3000/health/ready) in your browser—you should see a JSON response with status `"ok"`.
 
-> 🤔 **Why a demo app?** Because deployment only bites when there's a real app involved: web + worker processes, a database with migrations, file storage, a build-time version stamp. This one is small enough to read every line — so you can focus on the deployment around it.
+> 🤔 **Why include a demo app?** Because deployment only gets real when the application has real moving parts: separate web and worker processes, database schema migrations, persistent file storage, and a build-time version stamp. `demo-app` is compact enough to read end-to-end in ten minutes, yet complete enough to exercise every failure mode in a production pipeline.
 
-⚠️ Everything destructive in this course happens on **your lab server**, always flagged ⚠️ in the text. Never rehearse on a machine serving real users.
-
----
-
-## Checkpoint 1: 🧱 Beginner — one server, one domain, one HTTPS URL
-
-📖 **Read**: [中文](tutorials/zh/01-beginner.md) · [English](tutorials/en/01-beginner.md) · ⏱ 3–5h
-
-Buy a VPS, lock it down, and put a real app on the internet:
-
-- 🔑 SSH keys instead of passwords, firewall, and a deliberate **lockout drill**
-- ♻️ systemd so your app survives crashes and reboots
-- 🌐 Nginx + HTTPS on your own domain
-- 💾 Daily backups **and a real restore drill** — an untested backup is no backup
-- 🐢 A naive `deploy.sh`, kept on purpose as the villain of Chapter 7: watch it commit the **eight deadly sins** of deployment with your own eyes
-
-✅ **Checkpoint**: `https://your-domain` serves your app over HTTPS, and you've restored the database from backup at least once.
+⚠️ Every destructive experiment in this course runs strictly on **your disposable lab server** and is clearly marked with ⚠️. Never rehearse destructive drills on a machine serving real production traffic.
 
 ---
 
-## Checkpoint 2: ⚙️ Intermediate — push-to-deploy with automatic rollback
+## Checkpoint 1: 🧱 Beginner — One Server, One Domain, One HTTPS URL
 
-📖 **Read**: [中文](tutorials/zh/02-intermediate.md) · [English](tutorials/en/02-intermediate.md) · ⏱ 4–6h
+📖 **Read**: [中文](tutorials/zh/01-beginner.md) · [English](tutorials/en/01-beginner.md) · ⏱ 3–5 hours
 
-Now fix the eight sins properly. This level is a complete, copyable pipeline:
+Provision a raw VPS, harden it from scratch, and put a real database-backed web app on the public internet:
 
-- 👥 Three users, least privilege, sudoers whitelist
-- 🔒 SSH forced commands — the deploy key can run exactly one thing
-- 🧊 Atomic switch via `releases/current`
-- 🩺 A health check that **asserts the deployed SHA** — "port is open" is not "healthy"
-- ⏪ First-class rollback: `rollback.sh`, drilled, not theoretical
-- 🤖 GitHub Actions: green CI on `main` → SSH deploy
-- 🎭 **Bad-commit theater**: 8 deliberately broken commits (bad migration, missing env, bad config…) to prove every failure mode recovers
+- 🔑 SSH key authentication, host firewall (`ufw`), and a guided **lockout prevention drill**
+- ♻️ `systemd` process supervision so your app survives crashes and server reboots automatically
+- 🌐 Nginx reverse proxy + automated Let's Encrypt HTTPS on your own domain
+- 💾 Automated daily backups **plus a live restore drill**—because an untested backup is no backup at all
+- 🐢 A deliberately naive `deploy.sh` that sets up Chapter 7's finale: watching it commit the **Eight Deadly Sins of Deployment** firsthand
 
-✅ **Checkpoint**: push to `main` → CI → deploy → health-gated switch. Sabotage a release on purpose and watch it roll back automatically.
+✅ **Stage Goal**: `https://your-domain` serves your application over HTTPS, and you have successfully wiped and restored the database from a real backup archive.
 
 ---
 
-## Checkpoint 3: 🧪 Advanced — experiments, measurements, upgrade decisions
+## Checkpoint 2: ⚙️ Intermediate — Push-to-Deploy with Automatic Rollback
 
-📖 **Read**: [中文](tutorials/zh/03-advanced.md) · [English](tutorials/en/03-advanced.md) · ⏱ 6–10h
+📖 **Read**: [中文](tutorials/zh/02-intermediate.md) · [English](tutorials/en/02-intermediate.md) · ⏱ 4–6 hours
 
-Every section is one experiment, always in the same format:
+Eliminate every single flaw in the naive script by building a production-grade, copy-pasteable deployment pipeline:
+
+- 👥 Three-user privilege separation (`sam` / `deploy` / `app`) with a tight `sudoers` whitelist
+- 🔒 SSH forced commands (`deploy-entry`)—the CI deploy key can execute one controlled pipeline and nothing else
+- 🧊 Atomic release switching via the `releases/current` symlink
+- 🩺 Deep health checks that **assert the live Git SHA**—proving the new code is actually serving traffic, not just holding a port open
+- ⏪ First-class rollback (`rollback.sh`), tested under fire rather than assumed to work
+- 🤖 GitHub Actions integration: green CI on `main` triggers an automated SSH release
+- 🎭 **Bad-Commit Theater**: 8 intentionally sabotaged commits (broken migration, missing env var, syntax error, hung worker…) to prove your pipeline catches and rolls back every failure mode automatically
+
+✅ **Stage Goal**: Pushing to `main` runs CI, deploys atomically, verifies health, and automatically reverts to the previous release whenever a bad build slips through.
+
+---
+
+## Checkpoint 3: 🧪 Advanced — Experiments, Measurements, and Upgrade Decisions
+
+📖 **Read**: [中文](tutorials/zh/03-advanced.md) · [English](tutorials/en/03-advanced.md) · ⏱ 6–10 hours
+
+Every chapter is structured as a rigorous engineering experiment:
 
 ```
-Hypothesis → Steps → Observe → Verdict (+ upgrade trigger)
+Hypothesis → Steps → Observe → Verdict (+ when to upgrade)
 ```
 
-- 🟦🟩 Blue-green vs restart — measured in seconds of real downtime
-- 🏭 Build on server vs CI artifacts · push vs pull · short-lived SSH certificates
-- 💥 kill -9 / power loss / OOM labs: break production on purpose, watch it self-heal
-- 📊 RPO/RTO numbers for your backups — from "should work" to "proven, with a stopwatch"
-- 🐘 The honest decision table: **when is Kubernetes actually worth it?** (often: not yet)
+- 🟦🟩 **Blue-green switching vs. in-place restart**—measured in milliseconds of real request downtime under load
+- 🏭 **Server-side builds vs. CI-built artifacts**, **Push vs. Pull deployment**, and **short-lived SSH certificates** (CA-signed)
+- 💥 **`kill -9`, sudden power loss, and OOM labs**—break production processes on purpose and verify self-healing guarantees
+- 📊 **Measured RPO & RTO**—turn "we have backups" into stopwatch-verified recovery metrics
+- 🐘 **The Architecture Decision Matrix**—concrete thresholds for when you actually need Kubernetes, containers, or multi-node setups (and why you probably don't yet)
 
-✅ **Checkpoint**: you can answer "should we upgrade X?" with data from your own drills.
+✅ **Stage Goal**: You can evaluate any proposed infrastructure upgrade using quantitative data from your own benchmarks.
 
 ---
 
 ## 🤖 AI-Guided Learning Mode
 
-This repo is **AI-ready**. Open the repo root in any AI coding tool (Claude Code, Cursor, Copilot…) and just ask in plain language. The teaching-assistant protocol lives in [AGENTS.md](AGENTS.md), backed by a knowledge base in [ai/](ai/):
+This repository is **AI-ready** out of the box. Open the project root in any repo-aware AI coding assistant (Claude Code, Cursor, GitHub Copilot, etc.) and ask questions in plain Chinese or English. Driven by the teaching protocol in [AGENTS.md](AGENTS.md) and the structured knowledge base in [ai/](ai/), the assistant will:
 
-1. 📍 **It locates you first** — which book, which chapter (it asks one question if unsure, not twenty)
-2. 🎚 **Calibrated to your level** — no spoilers from chapters you haven't reached
-3. 🐢 **One step at a time** — one command, the expected output, then it waits for you to paste results back
-4. 🔎 **Errors route through a troubleshooting library** — T-01…T-32 in [ai/troubleshooting.md](ai/troubleshooting.md); it teaches you to debug instead of just fixing
-5. 🛡 **Safety rails** — never asks for real secrets; destructive ops require a "this is my lab machine" confirmation
+1. 📍 **Pinpoint your stage first** — Determines which book and chapter you are on (asking at most one quick clarifying question if needed)
+2. 🎚 **Match your current level** — Explains concepts using only what you have learned so far, without spoiling future chapters
+3. 🐢 **Guide you one step at a time** — Gives a single command tagged with `[local]` or `[server]`, tells you what output to expect, and waits for your result before moving on
+4. 🔎 **Diagnose errors systematically** — Routes symptoms through the 32-case troubleshooting catalog in [ai/troubleshooting.md](ai/troubleshooting.md), teaching you *how* to debug rather than dumping unverified fixes
+5. 🛡 **Enforce strict safety guardrails** — Never asks for real private keys or `.env` secrets, and requires explicit lab-machine confirmation before any destructive command
 
-Try:
+Try asking:
 
-- 「ssh 报 Permission denied (publickey) 怎么办?」
-- "I'm in beginner chapter 5 and curl returns 502"
-- "deploy failed, the Actions log ends with `FAILED step=migrate`"
+- 「ssh 报 Permission denied (publickey) 怎么办？」
+- `"I'm in Beginner Chapter 5 and curl returns 502 Bad Gateway"`
+- `"My deploy failed and the GitHub Actions log ends with FAILED step=migrate"`
 
-> ♻️ **Reuse the pattern in your own project**: copy `AGENTS.md` + `ai/`, then swap the stage table in `ai/stage-map.md` for your own roadmap.
+> ♻️ **Steal this pattern for your own team**: Copy `AGENTS.md` and `ai/` into your own repository, and swap the stage table in `ai/stage-map.md` for your internal onboarding roadmap.
 
 ---
 
-## 🧪 The demo app
+## 🧪 Inside `demo-app`
 
-`demo-app/` is deliberately boring — small enough to read fully — but it trips every deployment wire:
+`demo-app/` is intentionally minimal—every source file is under 50 lines—yet it exercises every critical boundary of a real production deployment:
 
-| Endpoint | What it does | Why it matters |
+| Endpoint | Behavior | Deployment Lesson |
 |---|---|---|
-| `GET /health/live` | process is alive | liveness vs readiness — a health check must assert the real thing |
-| `GET /health/ready` | one real DB roundtrip | "port open" ≠ "working" |
-| `GET /version` | build-time injected SHA | assert you deployed what you think you did |
-| `GET/POST /api/notes` | business API + enqueues a job | why there's a worker |
-| `GET /api/jobs/:id` | job status | at-least-once semantics + idempotency |
-| `POST/GET /api/files` | writes to the storage dir | backups aren't just databases |
+| `GET /health/live` | Returns `200` if the HTTP process is up | Liveness ≠ readiness; shallow checks miss broken dependencies |
+| `GET /health/ready` | Executes a real database round-trip | "Port is listening" does not mean "application can serve users" |
+| `GET /version` | Returns the build-time injected `gitSha` | Health checks must prove the *expected* version is actually live |
+| `GET/POST /api/notes` | CRUD API that enqueues background jobs | Coordinating web + worker processes across deployments |
+| `GET /api/jobs/:id` | Inspects background job state | Graceful `SIGTERM` shutdown, at-least-once delivery, and idempotency |
+| `POST/GET /api/files` | Reads/writes persistent disk storage | Why stateful backups must cover more than just PostgreSQL |
 
-`demo-app/deploy/` is the **complete server-side reference implementation** of the Level 2 pipeline. When porting it to your own project, start at [`deploy/app.conf`](demo-app/deploy/app.conf) — that's the one file you mostly need to change.
+`demo-app/deploy/` contains the **complete server-side reference implementation** for the Intermediate pipeline. When adapting this architecture to your own project, start with [`deploy/app.conf`](demo-app/deploy/app.conf)—almost every project-specific setting lives in that single file.
 
 ---
 
-## ❓ FAQ
+## ❓ Frequently Asked Questions
 
-<details><summary>💰 What does it cost?</summary>
+<details><summary>💰 How much will the cloud resources cost?</summary>
 
-A minimal VPS is ~$4–6/month (destroy it when done); a domain ~$1–10/year. The Advanced experiments recommend an hourly-billed box — usually under $1 total.
+An entry-level VPS costs roughly $4–6/month (and is billed hourly by most providers, so you can delete it as soon as you finish the course). A practice domain costs $1–10/year. The temporary secondary server used in the Advanced book's labs typically costs less than $1 before teardown.
 </details>
 
-<details><summary>🟢 My app is Python/Go/Java, not Node. Still useful?</summary>
+<details><summary>🟢 My stack is Python / Go / Java, not Node.js. Is this course still useful?</summary>
 
-Yes. The deployment skeleton (users, directories, systemd, atomic switch, health check, rollback) is language-agnostic. Every book ends with a "port it to your own project" checklist, and Advanced Chapter 11 proves it by porting the whole pipeline to a tiny Go app (~15 changed lines, measured).
+Absolutely. The entire deployment architecture—user isolation, immutable release directories, systemd units, atomic symlink switching, deep health checks, and one-command rollback—is completely language-agnostic. Every book ends with a "Porting to Your Own Project" checklist, and Advanced Chapter 11 demonstrates a complete migration to a compiled Go service by changing roughly 15 lines of configuration.
 </details>
 
-<details><summary>💥 Will this break my server?</summary>
+<details><summary>💥 Could I accidentally break my own computer or production server?</summary>
 
-Destructive experiments only ever run on your lab server, flagged ⚠️, and the SSH/firewall chapters include a deliberate lockout drill so a real lockout isn't your first. Bottom line: never on a machine with real users.
+Every destructive experiment takes place strictly on your disposable lab VPS and is clearly marked with ⚠️. Better still, the SSH and firewall chapters walk you through a controlled lockout drill early on, ensuring you know how to recover via out-of-band console access long before you touch a real production machine.
 </details>
 
 ---
 
 ## ⚔️ Side Quests
 
-- 🚚 **Port it to your real project** — start from `demo-app/deploy/app.conf` plus the checklist at the end of each book. On a lab machine first.
-- 🔒 **The lockout drill** — get locked out of your own server on purpose, then get back in (Advanced, Appendix B).
-- 🌐 **Publish the landing page** — `site/index.html` is a self-contained course overview (bilingual, zero external deps) and `site/llms.txt` is the entry point for AI agents. Drop both on any static host.
+- 🚚 **Port the pipeline to your own project** — Follow the migration checklist at the end of each book and customize `demo-app/deploy/app.conf` on a test server.
+- 🔒 **Run the Lockout Drill** — Intentionally lock yourself out of SSH and practice recovering safely via VNC/serial console (Advanced Book, Appendix B).
+- 🌐 **Host the course landing page** — `site/index.html` is a zero-dependency, bilingual course overview page, paired with `site/llms.txt` for AI agents. Drop both files onto any static hosting provider.
 
-## 🛡 Safety
+## 🛡 Safety Principles
 
-- All destructive experiments run on **your own lab server**, flagged ⚠️.
-- The course only generates one-off throwaway keys — it will never touch your real `.env` or production credentials.
-- The Advanced book covers billing, teardown, and key cleanup (local / server / GitHub) up front and at the end.
+- All destructive drills target **your isolated lab VPS** and are flagged with ⚠️.
+- The course uses dedicated, disposable keys and never touches your personal `.env` files or production credentials.
+- Complete teardown and credential-cleanup checklists (covering local machine, VPS, and GitHub Secrets) are provided at the end of the course.
 
 ---
 
-> 🏃 **Start now**: [Level 1 · 中文](tutorials/zh/01-beginner.md) · [Level 1 · English](tutorials/en/01-beginner.md)
+> 🏃 **Start building**: [Level 1 · 中文](tutorials/zh/01-beginner.md) · [Level 1 · English](tutorials/en/01-beginner.md)
 >
-> 💬 Problems, questions? Open an issue — the AI teaching assistant reads this repo too.
+> 💬 Spotted a bug or got stuck? Open an issue—or ask your AI coding assistant right inside this repo.

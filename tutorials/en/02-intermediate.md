@@ -1,37 +1,37 @@
 # Intermediate: Push-to-Deploy, Automatic Rollback
 
-> **What you'll learn**: after `git push`, GitHub Actions automatically notifies the server to "fetch → build → preflight → backup → migrate → atomic switch → health check", rolling back to the previous version automatically on any failure; if the deploy credential is stolen, all the attacker can do is trigger a legitimate deployment — they cannot read a single secret of yours.
+> **What you'll learn**: After `git push`, GitHub Actions automatically notifies your server to run a sixteen-step pipeline — "fetch → build → preflight → backup → migrate → atomic switch → health check" — and automatically rolls back to the previous release if any step fails. Even if your deployment credential is stolen, all an attacker can do is trigger a legitimate deployment of `main`; they cannot read a single secret or open a shell.
 >
-> **Self-check prerequisites** (all "yes" before continuing):
-> - [ ] I know what `journalctl -u xxx -n 50` does, and have used it myself
-> - [ ] My server has: Nginx + HTTPS, a systemd-managed app, Postgres in Docker, ufw allowing only 22/80/443
-> - [ ] I have completed at least one database restore drill (not "know how" — *done it*)
+> **Self-check prerequisites** (every box must be a confident "yes" before continuing):
+> - [ ] I know what `journalctl -u xxx -n 50` does and have used it myself
+> - [ ] My server runs Nginx + HTTPS, a systemd-managed app, Postgres in Docker, and `ufw` allowing only ports 22/80/443
+> - [ ] I have completed at least one database restore drill (not just read about it — *actually restored a backup*)
 > - [ ] I can name any three of the beginner book's "eight sins"
 >
-> If any box is unchecked: the relevant chapter is in the [beginner book](01-beginner.md).
+> If any box is unchecked, head back to the relevant chapter in the [beginner book](01-beginner.md) first.
 >
-> **Principles in this book**: rollback safety; health checks that assert the real version; no mixed states; least privilege; rollback as a first-class citizen; auditability.
+> **Core principles in this book**: rollback safety, health checks that assert the real running version, zero tolerance for mixed states, least privilege, rollback as a first-class citizen, and end-to-end auditability.
 
-**Deliverable**: a complete, portable deployment system. All scripts live in `demo-app/deploy/` in the repo and land in `/opt/demo-app/bin/` on the server. Porting to another project usually means editing one `app.conf`.
+**Deliverable**: A complete, portable production deployment system. Every script lives in `demo-app/deploy/` in the repository and installs into `/opt/demo-app/bin/` on the server. Porting this pipeline to your own project usually means editing a single file: `app.conf`.
 
 ---
 
 ## Chapter 1: From v0 to v1 — What We're Fixing
 
-The beginner book ended by judging v0's eight sins. This book's table of contents is the verdict:
+The beginner book closed by putting our naive v0 deployment script on trial for eight sins. This book's table of contents is the remediation plan:
 
-| # | v0's sin | v1's fix | Principle |
+| # | v0's sin | v1's fix | Engineering principle |
 |---|---|---|---|
-| 1 | unbounded downtime window | `releases/<sha>/` + `current` symlink, switched atomically; the restart window is all that remains (the advanced book's blue-green switching eliminates it) | staged rollout, contained blast radius |
-| 2 | installing/building in prod | kept (reference design), but a failed build never leaves debris; the advanced book's build-location experiment decides | build once, deploy everywhere; simplicity first |
-| 3 | half-done states | staging in `.partial`; promoted to a release only when everything succeeds | — |
-| 4 | no health check | assert `/version` == target SHA + a real DB read/write + worker heartbeat freshness + a 30s soak window | health checks assert the real thing; no mixed states |
-| 5 | rollback by adrenaline | `rollback.sh`: offline-capable, never touches the DB, timed — a first-class command | rollback as a first-class citizen |
-| 6 | the script owns full sudo | a dedicated `deploy` user + SSH forced command + a sudoers whitelist (restart fixed units / backup / migrate / healthcheck / audit — nothing else) | least privilege |
-| 7 | no records | `audit.log` + `logger` (syslog), one line per operation | auditability |
-| 8 | code/migration skew | failed migration → no code switch; order: backup → migrate → switch; destructive migrations go expand/contract (advanced book) | rollback safety |
+| 1 | Unbounded downtime window | Immutable `releases/<sha>/` directories + an atomic `current` symlink flip; only the brief process restart window remains (which the advanced book's blue-green switching eliminates) | Contained blast radius |
+| 2 | Installing & building on the prod box | Retained as the baseline reference design, but failed builds never leave debris behind; the advanced book's build-location experiment measures when to move builds to CI | Build once, deploy everywhere; simplicity first |
+| 3 | Half-finished states on failure | Stage every build in `.partial` and promote it to `releases/<sha>` with `mv` only after every build step succeeds | — |
+| 4 | No real health check | Assert `/version` == target SHA + a real database read/write + worker heartbeat freshness + a 30-second soak window | Health checks must assert the real thing; no mixed states |
+| 5 | Rollback by adrenaline | `rollback.sh`: works offline, never touches the database, completes in ~10 seconds — a first-class command | Rollback as a first-class citizen |
+| 6 | The deploy script owns full `sudo` | Dedicated `deploy` user + SSH forced command + a narrow `sudoers` whitelist (only restart fixed units, backup, migrate, healthcheck, and audit) | Least privilege |
+| 7 | No audit trail | Append structured lines to both `audit.log` and `logger` (syslog) on every deploy and rollback | Auditability |
+| 8 | Code and migration skew | Failed migration aborts before switching code; strict "backup → migrate → switch" ordering; destructive migrations follow expand/contract (covered in the advanced book) | Rollback safety |
 
-**The v1 pipeline at a glance** (keep this picture; every section is one piece of it):
+**The v1 pipeline at a glance** (keep this mental map handy — every section that follows builds one piece of it):
 
 ```
 You                  GitHub                       Server
@@ -59,13 +59,13 @@ You                  GitHub                       Server
 
 ### 2.1 Three identities, three job descriptions
 
-| User | Who | Can do | Cannot do |
+| User | Role | Allowed to do | Forbidden from doing |
 |---|---|---|---|
-| `root` (you, via sam's sudo) | admin | everything; owns the deploy scripts, sudoers, and deploy's authorized_keys | — (hence: use it only for admin actions) |
-| `deploy` | the CI's avatar | log in **only** via the SSH forced command; build releases; run 5 whitelisted actions via sudo | read `runtime.env`, edit scripts, open a shell, transfer files |
-| `app` | the service itself | run web/worker, read `runtime.env`, write storage, reach the DB | log in, touch code or deploy scripts |
+| `root` (you, via `sam`'s `sudo`) | System administrator | Everything; owns the deploy scripts, `sudoers`, and `deploy`'s `authorized_keys` | — (which is why you invoke it only for administrative changes) |
+| `deploy` | CI's server-side avatar | Log in **only** through the SSH forced command; build releases; invoke 5 whitelisted commands via `sudo` | Read `runtime.env`, modify deploy scripts, open an interactive shell, transfer arbitrary files |
+| `app` | The running service | Run the `web` and `worker` processes, read `runtime.env`, write to `storage/`, connect to Postgres | Log in over SSH, modify application code, touch deploy scripts |
 
-> **Why split** (least privilege): consider the worst case — the CI's SSH private key leaks. The attacker can trigger a deployment of some SHA on main and hammer the whitelist. They cannot read the DB password or alter the deploy scripts (deploy a malicious SHA? It must be an ancestor of main, and main is protected). The blast radius is minimal. The advanced book's credentials experiment quantifies static keys vs short-lived certificates.
+> **Why split privileges across three accounts (least privilege)**: Consider the worst-case scenario — your CI's SSH private key leaks. With this separation, all an attacker can do is trigger a deployment of a commit that already exists on `main` and call the five whitelisted helper scripts. They cannot read your database password in `runtime.env`, nor can they alter the deploy scripts on disk. Want to deploy malicious code? The target SHA must be an ancestor of `origin/main`, and `main` is a protected branch. The blast radius of a leaked CI key is shrunk to the absolute minimum. In Chapter 5 of the advanced book, we'll go one step further and compare long-lived static keys against short-lived SSH certificates.
 
 ### 2.2 The directory layout
 
@@ -87,11 +87,11 @@ You                  GitHub                       Server
 /run/demo-app/               # deploy lock (tmpfs; recreated by tmpfiles.d on boot)
 ```
 
-> **Why `releases/<sha>` instead of in-place `git pull`**: one full directory per version = natural rollback (flip a symlink), natural audit (the directory name *is* the version), immutable artifacts (no half-pulled working copies). It's the core of Capistrano's design for over a decade — worth copying.
+> **Why `releases/<sha>` instead of an in-place `git pull`**: Giving every deployment its own immutable directory buys you three properties at once: instant rollback (just repoint the `current` symlink), built-in auditability (the directory name *is* the exact Git SHA running in production), and immutable build artifacts (never a half-pulled working tree). This has been the core of Capistrano's design for well over a decade — and it is well worth borrowing.
 
 ### 2.3 Migrating from the v0 layout
 
-**[server]** tidy up v0's checkout, unit, and compose (**database data stays** — it lives in a Docker volume):
+**[server]** First, retire v0's working tree, systemd unit, and Compose stack (**your database data stays safe** inside its Docker volume):
 
 ```bash
 sudo systemctl disable --now demo-app
@@ -101,7 +101,7 @@ cd /srv/demo-app && sudo docker compose down      # volume preserved (demo-app_p
 cd /srv && sudo mv demo-app demo-app-v0-backup
 ```
 
-Get the latest repo onto the server (the deploy scripts install from it), then run the bootstrap:
+Next, clone the latest repository onto the server (so we can install the v1 deploy scripts from it) and run the bootstrap installer:
 
 ```bash
 cd ~ && git clone git@github.com:yourname/demo-app.git demo-app-bootstrap
@@ -109,9 +109,9 @@ cd demo-app-bootstrap/deploy
 sudo ./install.sh git@github.com:yourname/demo-app.git
 ```
 
-`install.sh` (in `deploy/install.sh`, ~100 lines — worth reading fully) does 9 things: create `app`/`deploy` users with locked passwords → build the directory tree above → install scripts to `/opt/demo-app/bin` (root-owned) → install sudoers with `visudo -cf` validation → install the systemd units (enable, don't start) → wire compose and `runtime.env` (filling in the password you saved) → clone `repo.git` → install the daily backup cron → print next steps.
+`install.sh` (located at `deploy/install.sh`, ~100 lines — well worth reading top to bottom) performs nine setup steps: creates the `app` and `deploy` users with locked passwords → builds the directory tree shown above → installs the pipeline scripts into `/opt/demo-app/bin` (owned by `root`) → installs the `sudoers` file after validating it with `visudo -cf` → installs the systemd units (`enable` without `start`) → wires up Compose and `runtime.env` → clones the bare `repo.git` mirror cache → installs the daily backup cron job → prints the remaining manual steps.
 
-Re-attach the v0 database password and confirm the data survived:
+Now restore the database password you saved from v0, re-run the idempotent installer to regenerate `runtime.env` with that password, and verify that your data from the beginner book is still intact:
 
 ```bash
 sudo cp /tmp/demo-compose.env /opt/demo-app/compose/.env && rm /tmp/demo-compose.env
@@ -121,7 +121,7 @@ docker exec demo-app-db psql -U demo_app -d demo_app -Atc "SELECT count(*) FROM 
 # the count you created in the beginner book — data survived the move
 ```
 
-The file storage must move over too (it's a first-class backup citizen; v0's storage lives in the old directory):
+Finally, move your uploaded file storage over from the v0 backup directory (file storage is a first-class citizen of our backup and deployment layout):
 
 ```bash
 sudo rm -rf /srv/demo-app/storage
@@ -129,9 +129,9 @@ sudo cp -a /srv/demo-app-v0-backup/storage /srv/demo-app/storage
 sudo chown -R app:app /srv/demo-app/storage
 ```
 
-> `install.sh` is idempotent: existing things are left alone. Upgrading the deploy scripts themselves is "edit the repo → rerun install.sh" — and if someone forgets to rerun it, that drift gets automatic detection in the advanced book, Chapter 7.
+> `install.sh` is completely idempotent: existing data and state are left untouched. Whenever you update the scripts in `deploy/` in your repository, upgrading the server is simply "pull the repo → rerun `install.sh`". (What if someone edits a script in Git and forgets to rerun `install.sh` on the server? Chapter 7 of the advanced book adds automated drift detection for exactly that.)
 
-✅ **Checkpoint**: `ls -la /opt/demo-app/bin | head -5` shows every file owned by root; `sudo ls -la /opt/demo-app/env/` shows `runtime.env` as `-rw-r----- root app`.
+✅ **Checkpoint**: `ls -la /opt/demo-app/bin | head -5` shows every script owned by `root`; `sudo ls -la /opt/demo-app/env/` shows `runtime.env` with permissions `-rw-r----- root app`.
 
 ---
 
@@ -145,7 +145,7 @@ sudo chown -R app:app /srv/demo-app/storage
 ssh-keygen -t ed25519 -f ~/.ssh/demo_deploy_key -N "" -C "ci-deploy@demo-app"
 ```
 
-The private key (`demo_deploy_key`) goes into GitHub Secrets later; the **public key** goes to the server now.
+The private key (`demo_deploy_key`) will go into GitHub Secrets in Chapter 8; the **public key** goes onto the server right now.
 
 ### 3.2 authorized_keys: a key that opens exactly one door
 
@@ -161,17 +161,17 @@ sudo chown -R root:root /home/deploy/.ssh
 sudo chmod 0755 /home/deploy/.ssh && sudo chmod 0644 /home/deploy/.ssh/authorized_keys
 ```
 
-Three details, each deliberate:
+Three details here are load-bearing, and each one is deliberate:
 
-1. **`restrict`**: turns off every "extra feature" of this key — no terminal (`-t` fails), no port forwarding (`-L/-R/-D` fail), no X11/agent forwarding, nothing beyond what the forced command allows.
-2. **`command="..."`**: whatever the client sends, sshd runs this instead. The client's intended command arrives in the `SSH_ORIGINAL_COMMAND` environment variable, which `deploy-entry` adjudicates.
-3. **The directory and file are root-owned**: the deploy user (or anyone who steals the deploy password) **cannot edit their own key**. The deploy-escalation drill in the advanced book's scenario workbook (Chapter 10) verifies this.
+1. **`restrict`**: Disables every extra capability on this key in one stroke — no pseudo-TTY allocation (`ssh -t` fails), no port forwarding (`-L`, `-R`, and `-D` all fail), and no X11 or agent forwarding.
+2. **`command="..."`**: No matter what command the SSH client asks to run, `sshd` ignores it and executes `/opt/demo-app/bin/deploy-entry` instead. The client's original command string is passed via the `SSH_ORIGINAL_COMMAND` environment variable, where `deploy-entry` inspects and judges it.
+3. **Both `/home/deploy/.ssh` and `authorized_keys` are owned by `root`**: The `deploy` user (or anyone who compromises a `deploy` process) **cannot modify their own `authorized_keys` file** to strip off the `restrict,command=...` options. The privilege-escalation drill in Chapter 10 of the advanced book puts this to the test.
 
-> This is the secure shape of the reference design's "SSH notify": port 22 must be open to the public (the advanced book's pull model closes this door entirely), but behind the door there is a one-centimeter slot.
+> This is the hardened form of our reference design's "SSH push notification": port 22 remains reachable from the internet (the advanced book's pull model closes port 22 to CI entirely), but behind that door sits a mail slot just one centimeter wide.
 
 ### 3.3 deploy-entry: exactly one accepted input
 
-`/opt/demo-app/bin/deploy-entry` (root-owned; full content in `deploy/deploy-entry`):
+Let's inspect `/opt/demo-app/bin/deploy-entry` (owned by `root`; full source in `deploy/deploy-entry`):
 
 ```sh
 #!/bin/sh
@@ -209,10 +209,10 @@ tail -n +1 -f "$LOG" --pid="$pid" || true
 wait "$pid"
 ```
 
-Two designs to internalize:
+Two design choices here are worth internalizing:
 
-- **The whitelist is the argument parser**: the `case` patterns accept only `deploy ` + 40 lowercase hex chars. Short SHAs, uppercase, spaces, `rm -rf`, environment-variable injection (`deploy abc && ...`) — all refused.
-- **`setsid` detachment**: the deploy runs in a new session; if the SSH connection dies (CI timeout, laptop lid), it continues unaffected. The client merely *watches* via `tail -f`. `wait "$pid"` hands the deploy's real exit code back to SSH, so CI marks the run correctly.
+- **The argument parser *is* the whitelist**: The two `case` blocks accept nothing except the literal prefix `deploy ` followed by exactly 40 lowercase hexadecimal characters. Abbreviated SHAs, uppercase hex, trailing arguments, `rm -rf`, or shell metacharacters (`deploy abc && ...`) are all rejected before anything else runs.
+- **Session detachment via `setsid`**: `deploy.sh` runs in its own session, completely detached from the SSH connection. If the SSH connection drops mid-deploy (a CI job times out, or you close your laptop lid during a manual trigger), the deployment on the server keeps running cleanly to completion instead of dying halfway through. While connected, the SSH client simply watches the log file via `tail -f`; when `deploy.sh` finishes, `wait "$pid"` propagates its exact exit code back over SSH so GitHub Actions marks the workflow green or red accurately.
 
 ### 3.4 deploy's GitHub key (so repo.git can fetch)
 
@@ -228,9 +228,9 @@ sudo ssh-keyscan -t ed25519 github.com > /home/deploy/.ssh/known_hosts
 sudo chown root:root /home/deploy/.ssh/known_hosts && sudo chmod 0644 /home/deploy/.ssh/known_hosts
 ```
 
-> Two keys, two jobs: `deploy@server fetch key` can only **read** the repo (for git fetch); the CI's `ci-deploy@demo-app` can only **trigger deploys**. Either one alone is not enough to cause an incident.
+> Notice the strict separation between the two SSH keys: `deploy@server fetch key` can only **read** the repository from GitHub (used by `git fetch`), whereas CI's `ci-deploy@demo-app` key can only **trigger deployments** on the server. Compromising either key on its own is not enough to mount an attack.
 
-With the key in place, finish the step Chapter 2 couldn't complete (install.sh is idempotent — just rerun):
+With the GitHub deploy key configured, re-run `install.sh` to complete step 7/9 (cloning the bare `repo.git` mirror cache), which couldn't succeed in Chapter 2 before the key existed:
 
 ```bash
 cd ~/demo-app-bootstrap/deploy && sudo ./install.sh git@github.com:yourname/demo-app.git
@@ -240,7 +240,7 @@ sudo ls /srv/demo-app/repo.git/HEAD >/dev/null && echo repo-cache-OK
 
 ### 3.5 The connection test matrix
 
-**[local]** try each line; expected output on the right:
+**[local]** Run each command below and verify that the server's response matches the comment:
 
 ```bash
 KEY=~/.ssh/demo_deploy_key; H=deploy@203.0.113.10
@@ -264,22 +264,22 @@ ssh -i $KEY -L 9999:localhost:5432 $H "deploy 0000000000000000000000000000000000
 # (fails immediately — restrict forbids forwarding; the database stays unreachable)
 ```
 
-And one "real" deploy (40 zeros is not on main, so the pipeline itself rejects it — but that's *inside* the pipeline, which is the point):
+Now test one syntactically valid deployment command using a dummy 40-zero SHA. It passes `deploy-entry` at the door, enters `deploy.sh`, and gets rejected at the ancestry verification step inside the pipeline:
 
 ```bash
 ssh -i $KEY $H "deploy 0000000000000000000000000000000000000000" 2>&1 | tail -3
 # ... FAILED step=verify: SHA is not an ancestor of origin/main — rejected
 ```
 
-✅ **Checkpoint**: all six illegal inputs were refused with clear reasons; the last one got rejected *inside the pipeline* — the doorman and the security scanner each did their job.
+✅ **Checkpoint**: All six malformed or unauthorized requests were stopped cold at the gate with clear error messages, while the syntactically valid fake SHA was caught inside the pipeline by the ancestry check — the doorman and the internal security scanner each did their job.
 
 ---
 
 ## Chapter 4: sudoers — a Least-Privilege Whitelist
 
-deploy.sh runs as the deploy user, but six actions need root: restarting units, backup (docker exec), the migration wrapper, config preflight, health checks, and audit. The sudoers whitelist is precise to "which script + which arguments":
+`deploy.sh` runs as the unprivileged `deploy` user, but six specific operations along the pipeline require `root`: restarting the systemd units, running backups (`docker exec`), invoking the migration wrapper, running the config preflight check, running the health check, and writing to the audit log. Our `sudoers` file whitelists those exact scripts and their allowed argument patterns — nothing more:
 
-**[server]** `cat ~/demo-app-bootstrap/deploy/demo-app.sudoers` (installed by install.sh to `/etc/sudoers.d/demo-app`):
+**[server]** Inspect `cat ~/demo-app-bootstrap/deploy/demo-app.sudoers` (installed by `install.sh` at `/etc/sudoers.d/demo-app`):
 
 ```sudoers
 deploy ALL=(root) NOPASSWD: /opt/demo-app/bin/backup.sh premigrate, \
@@ -297,12 +297,12 @@ deploy ALL=(root) NOPASSWD: /opt/demo-app/bin/backup.sh premigrate, \
     /usr/bin/systemctl restart demo-app-web.service demo-app-worker.service
 ```
 
-> - **Absolute paths**: sudoers demands them (`/usr/bin/systemctl`) — the classic defense against "I placed a fake systemctl earlier in PATH".
-> - **Arguments are the boundary**: `systemctl restart demo-app-web` and `systemctl restart demo-app-web demo-app-worker` are two different rules — sudoers matches "command + exact arguments" as one string. Want `systemctl stop ssh`? No such rule; denied.
-> - **The glob is only layer one**: `[0-9a-f]*` could theoretically match an argument containing spaces (sudoers' `*` spans spaces), so every wrapper script re-validates "exactly one 40-hex argument" internally (defense in depth — the glob alone is never trusted; the advanced book attacks exactly this boundary).
-> - **`audit.sh *` is a known concession**: deploy can forge audit lines (it can trigger deploys anyway). The advanced book Chapter 8 fixes it with forwarding to a remote syslog.
+> - **Absolute paths are mandatory**: Every command in `sudoers` must use a full path (`/usr/bin/systemctl`). This prevents the classic `PATH` hijacking trick where an attacker drops a fake `systemctl` binary into a writable directory earlier in `PATH`.
+> - **Arguments define the boundary**: To `sudoers`, `systemctl restart demo-app-web` and `systemctl restart demo-app-web demo-app-worker` are two distinct rules — it matches the command *plus* its full argument string as a single unit. If someone tries `sudo systemctl stop ssh`, there is no matching rule, and `sudo` refuses.
+> - **Sudoers globs are only the first layer**: In `sudoers` syntax, the `*` wildcard in `[0-9a-f]*` can match across spaces, which means a naive glob alone could be tricked into accepting extra arguments. That is why every wrapper script (`migrate-wrapper.sh`, `check-config.sh`, `healthcheck.sh`) immediately re-validates that it received **one and only one 40-character lowercase hex argument** — true defense in depth (Chapter 5 of the advanced book tests this exact boundary).
+> - **`audit.sh *` is a conscious trade-off**: Because `deploy` can pass arbitrary arguments to `audit.sh`, it could theoretically forge an audit line — though `deploy` is already authorized to trigger real deployments anyway. Chapter 8 of the advanced book closes this gap by forwarding syslog events to a remote log host.
 
-🧪 **Verify** ([server], as deploy):
+🧪 **Verify** (**[server]**, testing as the `deploy` user):
 
 ```bash
 sudo -u deploy sudo systemctl restart demo-app-web
@@ -313,13 +313,13 @@ sudo -u deploy cat /opt/demo-app/env/runtime.env
 # cat: ... Permission denied   ← the DB password; deploy cannot read it
 ```
 
-The iron rule for editing sudoers: always run `sudo visudo -cf /etc/sudoers.d/demo-app` afterwards. **A malformed sudoers file can break sudo entirely** — the classic way to lock yourself out; your only rescue is the provider console.
+Remember the iron rule whenever you touch a `sudoers` file: always validate it with `sudo visudo -cf /etc/sudoers.d/demo-app`. **A syntax error in `/etc/sudoers.d/` can disable `sudo` across the entire machine** — leaving the cloud provider's emergency web console as your only way back in.
 
 ---
 
 ## Chapter 5: systemd Units — web + worker, Graceful Shutdown
 
-v1 has two units (`deploy/demo-app-web.service`, `deploy/demo-app-worker.service`, both installed by install.sh). The web unit's key lines:
+In v1, the application runs as two separate systemd units (`deploy/demo-app-web.service` and `deploy/demo-app-worker.service`, both installed by `install.sh`). Here are the key lines from the web unit:
 
 ```ini
 [Service]
@@ -337,26 +337,26 @@ ProtectSystem=full
 ProtectHome=true
 ```
 
-Every difference from v0 has a reason:
+Every change from v0's unit file serves a specific purpose:
 
-- **`WorkingDirectory`/`ExecStart` via `current`**: deploys flip the symlink and `systemctl restart`; the unit file never changes.
-- **`TimeoutStopSec=15`**: on restart, systemd sends SIGTERM first. server.js drains in-flight requests before exiting; the worker finishes its current job (at-least-once semantics). No exit after 15s → SIGKILL — so your graceful-shutdown code must be time-aware.
-- **`Restart=on-failure` rather than `always`**: a deliberate `stop` shouldn't bounce back. Note systemd's built-in rate limit: 5 crashes in a row lands the unit in `failed` state **and stays down**. That's a feature — crash loops shouldn't be infinitely masked, and the health check's soak window exists to catch exactly this.
-- The last four lines are minimal hardening: no new privileges, a private /tmp, most of the filesystem read-only. Enough without being exotic (simplicity first).
+- **`WorkingDirectory` and `ExecStart` point through `/srv/demo-app/current`**: Deployments simply flip the `current` symlink and run `systemctl restart`; the unit files themselves never need to be edited or reloaded.
+- **`TimeoutStopSec=15`**: On `restart`, systemd first sends `SIGTERM`. `server.js` catches `SIGTERM`, stops accepting new connections, drains any in-flight HTTP requests, and exits cleanly; `worker.js` finishes its current job before exiting (preserving at-least-once job semantics). If a process is still alive after 15 seconds, systemd follows up with `SIGKILL` — so your application's shutdown handler must be time-aware.
+- **`Restart=on-failure` instead of `always`**: If an operator intentionally stops the service with `systemctl stop`, systemd shouldn't immediately resurrect it. Also note systemd's built-in start rate limiting: if a unit crashes 5 times in quick succession, systemd marks it `failed` **and stops restarting it**. That is a feature, not a bug — crash loops should not be masked forever, and our health check's 30-second soak window in Chapter 7 is designed to catch them.
+- **Minimal sandboxing in the last four lines**: The process cannot gain new privileges, gets a private `/tmp`, cannot write to `/usr` or `/etc`, and cannot see `/home`. Four lines give you solid baseline hardening without adding container complexity.
 
-Inter-unit ordering (both units `Wants=docker.service`) covers boot; "what if the DB isn't ready yet" is absorbed by app-level retries plus `Restart=on-failure`.
+Boot-time ordering is handled by `Wants=docker.service` on both units, while transient "Postgres isn't ready yet" startup races are absorbed by application-level connection retries paired with `Restart=on-failure`.
 
 ---
 
 ## Chapter 6: Backup v1 — Scope, Retention, Drills
 
-`/opt/demo-app/bin/backup.sh` (root-owned; invoked via sudoers/cron) upgrades v0 in three ways:
+`/opt/demo-app/bin/backup.sh` (owned by `root` and invoked via `sudoers` or `cron`) upgrades v0's backup script in three critical ways:
 
-1. **Scope**: the database (`pg_dump -Fc`) **plus** the `storage/` directory. Missing file storage from backups is a real defect in the reference design; v1 fixes it outright.
-2. **Retention = by-count + by-time combined**: keep the newest N per class (daily 14 / premigrate 10), **and never delete anything under 7 days old**. Count-only retention wipes history when deploys are frequent — the other half of that same defect.
-3. **Two classes**: scheduled `daily` + pre-migration `premigrate` (triggered automatically by deploys). For rollbacks, prefer the latest `premigrate`.
+1. **Complete scope**: It backs up both the Postgres database (`pg_dump -Fc`) **and** the `storage/` directory. Backing up the database while forgetting user-uploaded files on disk is a classic production blind spot; v1 closes it outright.
+2. **Combined count + age retention**: Each backup class keeps the newest N archives (`14` for `daily`, `10` for `premigrate`), **and never deletes any backup younger than 7 days**. Pure count-based retention is dangerous: a busy afternoon of fifteen deployments would otherwise purge every pre-migration backup from earlier in the week.
+3. **Two distinct backup classes**: Scheduled `daily` backups run via cron, while `premigrate` backups fire automatically right before every deployment's database migration step. If a deployment goes sideways and you need to restore data, you always have a snapshot taken seconds before the migration ran.
 
-🧪 **Verify + drill** (same moves as beginner 6.3, 30 seconds this time):
+🧪 **Verify + run a restore drill** (the same drill from section 6.3 of the beginner book — now down to a 30-second routine):
 
 ```bash
 sudo /opt/demo-app/bin/backup.sh manual
@@ -369,13 +369,13 @@ docker exec restore-drill psql -U drill -d drill -Atc "SELECT count(*) FROM note
 docker rm -f restore-drill
 ```
 
-> **An untested backup is no backup — demand evidence of a real restore drill.** Keep that output — it's your first-hand RTO datapoint. The advanced book Chapter 6 produces the full table (sizes/durations/RPO).
+> **An untested backup is not a backup — always demand evidence from a real restore drill.** Save the output of `time` from that command: it is your first real RTO (Recovery Time Objective) data point. In Chapter 6 of the advanced book, we will benchmark RPO and RTO across realistic dataset sizes.
 
 ---
 
 ## Chapter 7: The Pipeline, Line by Line
 
-The heart of this book. `deploy.sh` is ~150 lines (full text in `deploy/deploy.sh`); we walk it in 16 steps. For each step: **what? why? what happens on failure?**
+This chapter is the heart of the book. `deploy.sh` is roughly 150 lines of shell (see the full source in `deploy/deploy.sh`), and we will walk through all 16 steps in order. For every step, ask three questions: **What does it do? Why is it here? And what happens when it fails?**
 
 ### 7.1 Steps 0–2: arguments, freeze switch, serialization lock
 
@@ -390,8 +390,8 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || die 75 lock "another deploy is running"
 ```
 
-- **The freeze switch**: after `touch /opt/demo-app/freeze`, every deployment is explicitly refused and logged. During an incident, "stop the bleeding" beats "fix it fast".
-- **flock**: two deploys arriving at once — the second **fails immediately** rather than queueing or interleaving. The workflow's `concurrency` is the first line of defense (Chapter 8); flock is the second — it doesn't depend on GitHub and also covers manual runs, timers, and stuck runners. The lock file lives in `/run` (tmpfs): a reboot clears it, so no deadlocks.
+- **The emergency freeze switch**: Once an operator runs `sudo touch /opt/demo-app/freeze`, every incoming deployment is immediately rejected and logged. During an active incident, stopping the bleeding comes before shipping fixes.
+- **`flock` serialization**: If two deployments reach the server at the same time, the second one **fails immediately** instead of queueing or interleaving with the first. The GitHub Actions `concurrency` group (Chapter 8) is our first line of defense; `flock` on the server is our second — it doesn't rely on GitHub and catches manual triggers, cron jobs, and wedged CI runners alike. Because the lock file lives on `/run` (`tmpfs`, backed by RAM), a machine reboot clears it automatically, preventing stale lock deadlocks.
 
 ### 7.2 Steps 3–5: idempotency, provenance, skip-if-older
 
@@ -406,8 +406,8 @@ git --git-dir="$REPO_CACHE" merge-base --is-ancestor "$SHA" refs/heads/main \
 git merge-base --is-ancestor "$SHA" "$CURRENT" && { log "skip: older"; exit 0; }   # skip-if-older
 ```
 
-- **The ancestry check**: only SHAs genuinely on main's history deploy. SHAs knocked off by force-push, feature-branch SHAs, unpushed local SHAs — all rejected. What deploys is what CI tested — the provenance half of "build once, deploy everywhere".
-- **Skip-if-older**: a queued deploy that's *older* than what's live is skipped (live stays put). Corollary: **you cannot roll back by "redeploying an old SHA"** — which is exactly why `rollback.sh` must exist.
+- **The ancestry check (provenance)**: Only commits that genuinely sit on `origin/main`'s history are allowed to deploy. Commits orphaned by a force-push, unmerged feature-branch commits, and unpushed local commits are all rejected. What runs in production is guaranteed to be a commit that passed CI on `main`.
+- **Skip-if-older**: If a queued deployment job arrives with a target SHA that is *older* than the commit currently live in production (`CURRENT`), the script logs a skip message and exits cleanly without touching the live site. Notice the important corollary: **you cannot roll back by re-running an old CI deployment job** — which is why `rollback.sh` exists as a dedicated tool.
 
 ### 7.3 Steps 6–8: preflight, build, promote
 
@@ -424,11 +424,11 @@ git archive "$SHA" | tar -x -C "$PARTIAL"            # export the exact commit
 mv "$PARTIAL" "$SRV_ROOT/releases/$SHA"              # atomic promote
 ```
 
-- **`GIT_SHA` injection**: it's what `/version` returns. The health check asserts "the *new* version is live" — not "some version is live" (health checks must assert the real thing).
-- **`.partial` lifecycle**: a failed build deletes the whole thing; `releases/` only ever contains fully-built versions.
-- **`git archive` instead of `git pull`**: exports the **exact snapshot of the commit** — no `.git`, no working-tree state involved.
+- **`GIT_SHA` build injection**: Passing `GIT_SHA="$SHA"` into the build embeds the commit hash into the `/version` endpoint. Later, the health check uses `/version` to assert that the *new* release is actually serving traffic — not merely that *some* process is listening on port 3000.
+- **The `.partial` staging directory**: If any part of dependency installation or compilation fails, the script wipes `.partial` clean before exiting. As a result, `releases/` only ever contains complete, successfully built releases.
+- **`git archive` instead of `git pull`**: Exporting a tarball directly from the bare `repo.git` cache gives us a clean snapshot of that exact commit, free of `.git` metadata or leftover working-tree files.
 
-> The cost of building on the production box still applies: this step needs network and CPU. The reference design accepts it; the advanced book answers with data on when you shouldn't.
+> Building on the production server still carries a real cost: this step consumes network bandwidth and CPU cycles on the box serving live traffic. Our reference design accepts that trade-off for simplicity; Chapter 3 of the advanced book benchmarks when you should move the build step into CI instead.
 
 ### 7.4 Steps 9–11: config preflight, backup, migration
 
@@ -443,12 +443,12 @@ sudo -n /opt/demo-app/bin/migrate-wrapper.sh "$SHA" \
   || die 26 migrate "migration failed — code NOT switched"
 ```
 
-- **check-config**: runs `node dist/config.js --check-config` **as the app user, with the real `runtime.env` loaded**. "The new version needs `NEW_API_KEY` but nobody configured it" goes from *crash-after-switch, rollback saves us* to *refused-before-switch, zero user impact*. Note it runs as app: the exact runtime point of view (permissions and env alike), not the deploy user's guess.
-- **Backup failure = refuse to migrate**: better a failed deploy than an unprotected migration.
-- **Migration failure = no code switch**: live stays on the old version, old code + unchanged schema, still serving. A migration half-applied? `migrate.js` wraps each file in a transaction; a failing file rolls back completely and is never recorded in `schema_migrations`.
-- **Migration concurrency protection is two-layered**: `migrate-wrapper.sh`'s flock (host-level, fail fast) + `pg_advisory_lock` inside `migrate.js` (database-level, works across hosts).
+- **`check-config` preflight**: Before touching the live symlink, the pipeline runs `node dist/config.js --check-config` inside the new release directory **as the `app` user, with the real `/opt/demo-app/env/runtime.env` loaded**. That turns the classic "new code requires `NEW_API_KEY` and nobody added it to `.env`" mistake from a *post-switch crash-and-rollback* into a *pre-switch rejection with zero production impact*. Running as `app` ensures we test with the exact permissions and environment the service will see at runtime.
+- **Backup failure aborts the migration**: If the pre-migration backup fails for any reason, the pipeline refuses to run database migrations.
+- **Migration failure aborts the code switch**: If a migration script fails, `current` is never flipped; the old code continues serving traffic against the unchanged schema. What about a migration file that fails partway through? `migrate.js` wraps each `.sql` file in its own database transaction, so a failing migration rolls back cleanly and is never recorded in `schema_migrations`.
+- **Two-layer migration concurrency protection**: `migrate-wrapper.sh` acquires a host-level `flock` (failing fast if another migration is running locally), while `migrate.js` acquires a PostgreSQL session-level `pg_advisory_lock` (serializing migrations across multiple hosts if you ever scale out).
 
-🧪 **Watch migration concurrency live** ([server]):
+🧪 **Watch migration concurrency protection live** (**[server]**):
 
 ```bash
 # run two migrations at once; the second queues on the advisory lock
@@ -473,9 +473,9 @@ if ! sudo -n /opt/demo-app/bin/healthcheck.sh "$SHA"; then
 fi
 ```
 
-> **Why `ln -sfn` + `mv -T`**: `ln -sfn new current` alone is **not** atomic on most systems (it may unlink-then-symlink, with a "no current" instant in between). Build a temp symlink, then replace with `mv -T` (a rename — atomic in the kernel). This detail is the most steal-worthy line in the reference design.
+> **Why the two-step `ln -sfn` + `mv -T`**: On most Unix systems, running `ln -sfn new current` directly is **not** atomic — under the hood it unlinks `current` and then creates the new symlink, leaving a brief microsecond window where `/srv/demo-app/current` does not exist at all. The textbook pattern is to create a temporary symlink (`.current.tmp`) and then atomically overwrite `current` using `mv -T`, which invokes the kernel's atomic `rename(2)` syscall. If you copy only one idiom from this book into your own scripts, make it this one.
 
-**healthcheck.sh asserts five things** (full text in the repo; the essentials):
+**`healthcheck.sh` asserts five properties** (full script in `deploy/healthcheck.sh`; here is the core logic):
 
 ```bash
 version=$(curl ... "$VERSION_URL")   # ① /version gitSha == target SHA (not "port is open")
@@ -485,7 +485,7 @@ for u in $UNITS; do is-active ...    # ④ every unit active (no mixed states)
 sleep "$SOAK_SECONDS"; re-check all  # ⑤ 30s soak (catches "starts then dies" loops)
 ```
 
-① ③ ⑤ each close a false-positive hole: **the old process still answering** (the switch never took effect), **the worker crash-looping while web is fine**, and **up for 10 seconds then dead, after the check already passed**. The reference design's health check does miss the first two — the false-positive suspicion, confirmed — and this v1 implementation *is* the fix. Chapter 9 manufactures both false positives for you.
+Assertions ①, ③, and ⑤ each close a classic false-positive blind spot: **the old process still answering requests** because the restart didn't take effect, **the background worker crash-looping while the web server looks healthy**, and **a process that boots long enough to pass an instant check before crashing 10 seconds later**. Naive health checks that merely `curl` port 3000 once right after `systemctl restart` miss all three — and in Chapter 9, you will trigger these exact failure modes and watch v1 catch them.
 
 ### 7.6 Steps 15–16: retention, audit
 
@@ -494,27 +494,27 @@ sleep "$SOAK_SECONDS"; re-check all  # ⑤ 30s soak (catches "starts then dies" 
 sudo -n /opt/demo-app/bin/audit.sh "$SHA" deploy ok "$(( $(date +%s) - START_TS ))"
 ```
 
-`audit.log` looks like this:
+Each run appends a structured entry to `/var/log/demo-app/audit.log`:
 
 ```
 2026-10-25T12:00:07Z actor=deploy action=deploy sha=1f2e... result=ok duration=94s
 2026-10-25T12:40:11Z actor=sam action=rollback sha=0d9c... result=ok duration=9s
 ```
 
-**Exit-code quick reference** (this is the table the runbook points to; identical to the comment at the end of `deploy.sh`):
+**Exit-code quick reference** (referenced by the runbook in Chapter 10, and identical to the table at the bottom of `deploy.sh`):
 
-| Exit | step | Meaning |
+| Exit code | Step | Meaning & production state |
 |---|---|---|
-| 11 / 12 | fetch / verify | git fetch failed / SHA not on main's history (force-push?) |
-| 13 / 14 / 15 | preflight | low disk / Node major mismatch / commit lacks a lockfile |
-| 20 | build | build failed (`.partial` cleaned; production untouched) |
-| 22 | check-config | new release missing required env (caught pre-switch) |
-| 24 | backup | pre-migration backup failed (refusing to migrate) |
-| 26 | migrate | migration failed (code NOT switched) |
-| 28 | restart | systemctl restart failed |
-| 30 / 31 / 32 | health | rolled back, old healthy / rollback target also unhealthy (human needed) / first deploy failed with no fallback |
-| 64 / 65 | arg | invalid arguments |
-| 70 / 75 | freeze / lock | deploys frozen / another deploy in progress |
+| 11 / 12 | `fetch` / `verify` | `git fetch` failed / target SHA is not an ancestor of `origin/main` (force-push?) |
+| 13 / 14 / 15 | `preflight` | Low disk space / server Node major version mismatch / commit is missing `pnpm-lock.yaml` |
+| 20 | `build` | Build failed (`.partial` cleaned up; live site completely untouched) |
+| 22 | `check-config` | New release is missing a required environment variable (caught before switching) |
+| 24 | `backup` | Pre-migration backup failed (refusing to run database migrations) |
+| 26 | `migrate` | Database migration failed (code symlink NOT switched; old release still serving) |
+| 28 | `restart` | `systemctl restart` failed |
+| 30 / 31 / 32 | `health` | Rolled back automatically and old release is healthy / rollback target is also unhealthy (human intervention needed) / very first deploy failed with no previous release to fall back to |
+| 64 / 65 | `arg` | Invalid command-line arguments |
+| 70 / 75 | `freeze` / `lock` | Deployments frozen via `freeze` file / another deployment is already in progress |
 
 ---
 
@@ -522,7 +522,7 @@ sudo -n /opt/demo-app/bin/audit.sh "$SHA" deploy ok "$(( $(date +%s) - START_TS 
 
 ### 8.1 The workflow (`.github/workflows/ci.yml` in the repo)
 
-Two jobs: `check` (install → test → build → a config-preflight smoke test) and `deploy` (`needs: check`, with an `if` restricting to **pushes to main or manual dispatch on main**). The deploy job's core:
+The workflow defines two jobs: `check` (install → test → build → config-preflight smoke test) and `deploy` (`needs: check`, gated by an `if` condition so it runs **only on pushes to `main` or manual workflow dispatches on `main`**). Here is the core of the `deploy` job:
 
 ```yaml
 concurrency:
@@ -544,25 +544,25 @@ steps:
           -i ~/.ssh/id_ed25519 "deploy@$HOST" "deploy $SHA"
 ```
 
-- **No off-the-shelf SSH action** (like appleboy/ssh-action): every dependency is supply-chain risk, and these 5 lines let you *understand* every connection (simplicity first). Adopt an action after you understand these lines.
-- **`KNOWN_HOSTS` pins the host fingerprint**: a replaced server or MITM makes `ssh` hard-fail instead of asking "fingerprint changed, continue?". The deploy channel has zero tolerance for host-identity ambiguity.
+- **Why we don't use a third-party SSH GitHub Action** (such as `appleboy/ssh-action`): Every third-party action in your deploy job is another supply-chain dependency with access to your production credentials. Five lines of plain `ssh` have zero external dependencies and let you see *every single byte* crossing the wire. Once you understand those five lines, you can always wrap them later if you choose.
+- **Pinning the server's fingerprint with `KNOWN_HOSTS`**: If your server IP is ever hijacked or subjected to a man-in-the-middle attack, `StrictHostKeyChecking=yes` causes `ssh` to abort immediately instead of blindly trusting a new host key. Your deployment channel should have zero tolerance for host-identity ambiguity.
 
 ### 8.2 Three secrets + the host key
 
-**[local]** fetch the server's host key (obtain it once over a network you trust; from then on, only ever compare against this copy):
+**[local]** Fetch your server's Ed25519 host public key (run this once over a network you trust; from this point on, CI will verify every connection against this exact fingerprint):
 
 ```bash
 ssh-keyscan -t ed25519 203.0.113.10
 # output like: 203.0.113.10 ssh-ed25519 AAAAC3Nza...
 ```
 
-GitHub → your repo → Settings → Secrets and variables → Actions → New repository secret:
+In GitHub, open **your repo → Settings → Secrets and variables → Actions → New repository secret** and add these three secrets:
 
 | Secret | Value |
 |---|---|
-| `DEPLOY_HOST` | `203.0.113.10` |
-| `DEPLOY_SSH_KEY` | the full private key (`cat` it and paste the whole thing) |
-| `DEPLOY_KNOWN_HOSTS` | the `ssh-keyscan` output line |
+| `DEPLOY_HOST` | `203.0.113.10` (replace with your server's public IP) |
+| `DEPLOY_SSH_KEY` | The entire contents of `~/.ssh/demo_deploy_key` (`cat` the private key and paste it in full, including the `BEGIN`/`END` lines) |
+| `DEPLOY_KNOWN_HOSTS` | The full output line from `ssh-keyscan` above |
 
 ### 8.3 First deployment
 
@@ -573,57 +573,57 @@ cd ~/Projects/demo-app
 git commit --allow-empty -m "deploy: v1 pipeline ready" && git push
 ```
 
-GitHub → Actions → watch the `ci` workflow: `check` green → `deploy` runs, streaming the server's pipeline output (the step logs from Chapter 7).
+Open **GitHub → Actions** and watch the `ci` workflow run: `check` turns green, and then `deploy` starts, streaming the live step-by-step output from `deploy.sh` on your server.
 
-**[server]** double-check:
+**[server]** Double-check the result on the server:
 
 ```bash
 curl -s localhost:3000/version
-# {"gitSha":"1f2e3d..."}   ← exactly this run's commit SHA
+# {"gitSha":"1f2e3d..."}   ← matches this workflow run's commit SHA
 sudo tail -1 /var/log/demo-app/audit.log
 # ... action=deploy sha=1f2e3d... result=ok duration=XXs
 readlink /srv/demo-app/current
 # releases/1f2e3d...
 ```
 
-🎉 **From merged code to live new version with zero manual steps.** Next chapter: break things on purpose.
+🎉 **From `git push` to a verified live release with zero manual steps.** Now that the happy path works, let's spend Chapter 9 breaking it on purpose.
 
 ---
 
 ## Chapter 9: Story Time — Eight Bad Commits (the Scenario Theater)
 
-> Format per script: **how to make it** → **push** → **what you should see** → **which principle it proves**. Remember to `git revert` afterwards. All of it on **your lab repo**.
+> Every scenario in this chapter follows the same rhythm: **how to break it** → **push** → **what you should observe** → **which engineering principle it proves**. Remember to `git revert` after each drill so `main` returns to a clean state. Run all of these against **your lab repository and lab server**.
 
 ### Script 1: bad-build (build fails)
 
-**[local]** add a syntax error to `src/db.js` (e.g. `const broken = {`), commit, push.
+**[local]** **Break it**: Introduce a syntax error in `src/db.js` (for example, an unclosed `const broken = {`), commit, and push (to see the server-side build guard in action, you can temporarily bypass or disable the CI build check).
 
-**You should see** in the deploy job:
+**What you should see** in the deploy job logs:
 
 ```
 build: SYNTAX ERROR in src/db.js:
 FAILED step=build: build failed — no release created, live site untouched
 ```
 
-**[server]** verify: `ls /srv/demo-app/releases | wc -l` unchanged; `curl localhost:3000/version` still the old SHA. **Principle: failures stay in preflight; production never notices.**
+**[server]** **Verify**: `ls /srv/demo-app/releases | wc -l` is unchanged, and `curl localhost:3000/version` still returns the previous SHA. **Principle proven: contained blast radius — build failures are caught in staging (`.partial`), and production never notices.**
 
 ### Script 2: lockfile-mismatch (reproducibility breaks)
 
-Make: hand-edit `pg`'s version in `package.json` to `9.0.0` (without running `pnpm install`), push.
+**Break it**: Hand-edit `pg`'s version in `package.json` to `9.0.0` *without* running `pnpm install` to update `pnpm-lock.yaml`, then commit and push.
 
-You should see: on the server, `pnpm install --frozen-lockfile` refuses (lockfile out of sync with the manifest); step=build fails. **Principle: reproducibility.**
+**What you should see**: On the server, `pnpm install --frozen-lockfile` aborts immediately because `pnpm-lock.yaml` does not match `package.json`, failing at `step=build`. **Principle proven: build reproducibility — the server refuses to resolve untested dependency versions on the fly.**
 
 ### Script 3: wrong-node-version
 
-Make: change `.node-version` to `20.11.1`, push.
+**Break it**: Change `.node-version` to `20.11.1`, commit, and push.
 
-You should see: `FAILED step=preflight: server Node major=24, .node-version wants=20`. Live, untouched. **Principle: environment drift surfaces in preflight.**
+**What you should see**: `FAILED step=preflight: server Node major=24, .node-version wants=20`. The live site remains untouched. **Principle proven: environment drift is caught in preflight, long before runtime.**
 
 ### Script 4: bad-migration (migration fails, code doesn't switch)
 
-Make: create `migrations/003_bad.sql` containing `ALTER TABLE notes ADD COLUMN boom; ALTER TABLE notes ADD COLUMN boom;` (duplicate column, guaranteed error), push.
+**Break it**: Create `migrations/003_bad.sql` containing `ALTER TABLE notes ADD COLUMN boom; ALTER TABLE notes ADD COLUMN boom;` (adding the same column twice guarantees a SQL error), then commit and push.
 
-You should see:
+**What you should see**:
 
 ```
 migrate: applying 003_bad.sql
@@ -631,61 +631,61 @@ migrate: FAILED at 003_bad.sql: column "boom" of relation "notes" already exists
 FAILED step=migrate: migration failed — code NOT switched, live still on ...
 ```
 
-**[server]** verify: `/version` still the old SHA; `current` unchanged; **but a fresh backup exists** (`ls /var/backups/demo-app/db/ | tail -2` — the pre-migration backup fired first). **Principles: rollback safety and a contained blast radius — a failed migration isn't a disaster, just another rejected change.** Cleanup: `git rm migrations/003_bad.sql && git commit && git push`.
+**[server]** **Verify**: `curl localhost:3000/version` still reports the old SHA; `/srv/demo-app/current` hasn't moved; the `notes` table does not have a `boom` column (because the per-file transaction rolled back); **and a fresh pre-migration backup sits in `/var/backups/demo-app/db/`** (`ls /var/backups/demo-app/db/ | tail -2`). **Principles proven: rollback safety and contained blast radius — a broken migration is just a rejected change, not an outage.** Clean up with `git rm migrations/003_bad.sql && git commit && git push`.
 
 ### Script 5: bad-startup (migrates fine, won't boot → auto-rollback)
 
-Make: insert into `src/server.js` right after the config check:
+**Break it**: Insert a production-only crash right after the config check in `src/server.js`:
 
 ```js
 if (process.env.APP_ENV === 'production') { throw new Error('boom: bad-startup fixture') }
 ```
 
-(local is `dev`, CI is `ci` — neither triggers; only the server does. The sneakiest kind of bug: "explodes only in production".)
+(In local dev `APP_ENV` is `dev`, and in CI it is `ci` — so every test passes, and the bomb detonates *only* on the production server. That is the sneakiest class of bug in real life.)
 
-You should see: the deploy reaches the health check, `version-mismatch` keeps failing, then:
+**What you should see**: The pipeline runs through the symlink switch and restarts the units, then fails repeatedly on `version-mismatch` during the health check and triggers an automatic rollback:
 
 ```
 health check FAILED — rolling back to <old-sha>
 FAILED step=health: new release unhealthy; rolled back to <old-sha> (healthy). DB stays migrated — see expand/contract
 ```
 
-**[server]** verify: `/version` is back to the old SHA and `/health/ready` is 200; `journalctl -u demo-app-web -n 20` shows the `boom` error. **Principles: auto-rollback, plus rollback safety (the DB stays migrated — harmless here because the migration was additive; with a destructive one this is the incident scene, which is why the advanced book teaches expand/contract).** Cleanup: revert, push, watch it deploy green again.
+**[server]** **Verify**: `curl localhost:3000/version` is back to the old SHA, `/health/ready` returns `200`, and `journalctl -u demo-app-web -n 20` shows the `boom: bad-startup fixture` stack trace from the aborted release. **Principles proven: automatic rollback shrinks the outage window to seconds, plus rollback safety (notice that the database stays migrated — which is completely safe when migrations are additive; if a migration were destructive, rolling the code back would crash the old release, which is why Chapter 6 of the advanced book teaches the expand/contract pattern).** Clean up: `git revert`, push, and watch the pipeline go green again.
 
 ### Script 6: bad-worker (web fine, worker crash-loops → health check catches it)
 
-Make: add at the top of `main()` in `src/worker.js`:
+**Break it**: Add a recurring crash at the top of `main()` in `src/worker.js`:
 
 ```js
 setInterval(() => { throw new Error('crash loop fixture') }, 3000)
 ```
 
-You should see: the health check stalls on `worker-heartbeat=XXs` (stale heartbeat), then rolls back. A v0-style check that only polled the web port would have declared this deployment **successful** — with every worker on strike at midnight. **Principle: health checks cover every unit.** Cleanup: revert.
+**What you should see**: The health check stalls waiting for a fresh worker heartbeat (`worker-heartbeat=XXs`) and automatically rolls the release back. A naive health check that only polled the web port would have marked this deployment **green** — leaving every background job dead in the water at midnight. **Principle proven: health checks must cover every unit; mixed states are unacceptable.** Clean up with `git revert`.
 
 ### Script 7: needs-new-env (missing config, caught before the switch)
 
-Make: add `'NEW_SECRET_TOKEN'` to the `REQUIRED_ENV` array in `src/config.js` (and don't configure it anywhere), push.
+**Break it**: Add `'NEW_SECRET_TOKEN'` to the `REQUIRED_ENV` array in `src/config.js` (without adding it to the server's `runtime.env`), commit, and push.
 
-You should see:
+**What you should see**:
 
 ```
 check-config: FAIL — missing required env: NEW_SECRET_TOKEN
 FAILED step=check-config: new release would crash on missing env — kept current release
 ```
 
-Compare with Script 5: the same defect class — one caught **before** the switch (zero impact), one caught **after** by rollback. **Principle: shift failure left.** Cleanup: revert.
+Compare Script 7 with Script 5: both commits would crash the server on startup, but Script 7 is caught **before** the symlink flip (zero restarts, zero user impact), whereas Script 5 is caught **after** the flip and rescued by auto-rollback. **Principle proven: shift failure detection left whenever possible.** Clean up with `git revert`.
 
 ### Script 8: duplicate deploys & concurrency
 
-- **Idempotency**: manually re-trigger the same SHA (Actions → deploy workflow → Run workflow). Expect `sha already live and healthy — nothing to do`, plus an audit line `result=ok duration=1s`.
-- **Concurrency**: push two commits quickly; in Actions, two deploys queue (concurrency) and run in order; the final live version is the second (the first, now older, gets skipped if it deploys later than the newer one — check the skip log). The server-side flock logs hold the evidence.
-- **Disconnect-safety**: while a deploy runs in Actions, cancel the workflow (CI instantly "fails"), then on the server `tail /var/log/demo-app/deploy-*.log | grep -E '===|FAILED'` — the deploy completed anyway. A brief stretch where CI's status disagrees with reality is **by design** (setsid), not a bug.
+- **Idempotency**: Manually re-run the workflow for the exact same SHA that is already live (**Actions → ci → Run workflow**). You should see `sha already live and healthy — nothing to do` and a new audit log entry with `result=ok duration=1s`.
+- **Concurrency queuing**: Push two empty commits back-to-back. In GitHub Actions, the two `deploy` jobs queue up behind each other (`concurrency: deploy-production`) and execute sequentially; production ends up on the second commit (and if an older commit ever reaches the server after a newer one, step 5's skip-if-older check skips it cleanly). On the server, `flock` provides the hardware-level backstop.
+- **Disconnect survival (`setsid`)**: While a `deploy` job is running in GitHub Actions, click **Cancel workflow** in the UI (so GitHub immediately marks the run as cancelled/failed). Then check `/var/log/demo-app/deploy-*.log` on the server with `tail /var/log/demo-app/deploy-*.log | grep -E '===|FAILED'` — the deployment finished cleanly on its own. That brief window where CI's status disagrees with the server's reality is **by design** (`setsid`), not a bug.
 
 ---
 
 ## Chapter 10: The One-Page Runbook
 
-Print this page. During incidents, don't page through tutorials.
+Print this page and keep it next to your monitor. When production is on fire at 2 a.m., you want checklists, not chapters.
 
 ```text
 ═══ A deployment failed (Actions red) ══════════════════════
@@ -717,36 +717,38 @@ detection added in the advanced book)
 
 ## Chapter 11: Porting to Your Own Project
 
-The skeleton is language-agnostic:
+Nothing in this deployment skeleton is tied to Node.js. When you adapt it to your own application, here is what changes:
 
-**Edit one file**: `deploy/app.conf` (app name/users/units/health URLs/build command/migrate command/backup dirs...).
+**Usually just one file**: `deploy/app.conf` (which centralizes the app name, system users, systemd unit names, health-check URLs, build command, migration command, and backup paths).
 
-**Usually two lines within it**: `BUILD_CMD`, `MIGRATE_CMD` (e.g. `go build -o dist/app ./cmd/server`, `python -m alembic upgrade head`).
+**Most often just two lines inside it**: `BUILD_CMD` and `MIGRATE_CMD` (for example, `go build -o dist/app ./cmd/server` for Go, or `python -m alembic upgrade head` for Python).
 
-**The adaptation checklist**:
+**The application adaptation checklist**:
 
-| Item | Your app must provide |
+| Requirement | What your application needs to provide |
 |---|---|
-| A `/version` equivalent | an endpoint returning the build-injected version (none? add one — 10 lines, worth it) |
-| A `/health/ready` equivalent | checks key dependencies + a real read/write |
-| A `--check-config` equivalent | a startup-path validation of required env (see Script 7's value) |
-| A worker heartbeat equivalent | background jobs write a heartbeat row/file so health checks can cover them |
-| A migration mechanism | anything versioned, replayable, recorded; **apps without migrations should still have the concept as "(empty)"** |
-| Graceful shutdown | SIGTERM handling (in-flight requests/jobs) |
+| A `/version` equivalent | An endpoint returning the build-injected Git SHA (don't have one? Add it — 10 lines of code buys you deterministic version assertions) |
+| A `/health/ready` equivalent | A readiness endpoint that checks critical dependencies and performs a real database read/write |
+| A `--check-config` equivalent | A fast CLI flag or entrypoint that validates required environment variables before binding a port (see Script 7 in Chapter 9) |
+| A worker heartbeat equivalent | Background workers periodically update a heartbeat row or file so `healthcheck.sh` can verify they are alive |
+| A migration mechanism | Any versioned, replayable migration runner that records applied migrations; **even an app with no database migrations should keep this hook as an explicit no-op** |
+| Graceful shutdown | A `SIGTERM` handler that drains in-flight HTTP requests or finishes the current background job before exiting |
 
-Also sync the **unit names in sudoers** and **the systemd unit paths**. The advanced book Chapter 11 ports the whole thing onto a tiny Go app and counts the changed lines as the portability evidence.
+Remember to update the **unit names in `demo-app.sudoers`** and the **paths in your systemd unit files** to match. In Chapter 11 of the advanced book, we port this entire pipeline to a tiny Go service and count the exact number of changed lines to prove how portable it really is.
 
 ---
 
 ## What's Still Unsolved (the advanced book's table of contents)
 
-1. The restart window still exists (tens to hundreds of ms) → **blue-green switching**
-2. Builds still happen on the prod box → **the CI-artifact experiment**
-3. The SSH port must stay public → **pull-based deploys**
-4. The CI key is long-lived and static → **short-lived SSH certificates**
-5. How to make destructive migrations safe → **the full expand/contract walkthrough**
-6. Someone changed the deploy scripts without reinstalling — who notices? → **drift detection**
-7. What *are* the backup's RPO/RTO, really? → **measured tables**
+At this point, you have a production deployment pipeline that will comfortably serve most small-to-medium engineering teams. Push on its assumptions a little harder, though, and seven open questions remain — which form the table of contents for the advanced book:
+
+1. `systemctl restart` still leaves a brief restart window (tens to hundreds of milliseconds) → **Blue-green switching**
+2. Dependency installation and builds still run on the production server → **The CI-artifact build experiment**
+3. Port 22 must stay open to the internet so GitHub Actions can connect → **Pull-based deployments**
+4. The CI SSH private key is long-lived and static → **Short-lived SSH certificates**
+5. How do we ship destructive schema changes (dropping or renaming columns) without breaking rollback? → **The full expand/contract walkthrough**
+6. If someone updates `deploy/` in Git and forgets to re-run `install.sh` on the server, who notices? → **Automated drift detection**
+7. What are our true RPO and RTO numbers as the database grows? → **Measured backup and restore benchmarks**
 
 ---
 

@@ -1,37 +1,37 @@
 # demo-app
 
-部署教程的配套最小应用:小到能读完全部源码,却覆盖部署流程的每一条路径(web + worker + 迁移 + 配置预检 + 文件存储)。
+配套部署教程的最小可运行教学应用：源码精简到十分钟即可通读完毕，却完整覆盖了真实生产部署中的每一条关键链路（Web 服务 + 后台 Worker + 数据库迁移 + 启动配置预检 + 本地持久化文件存储）。
 
-| 端点 | 说明 |
-|---|---|
-| `GET /health/live` | 进程活着(不碰数据库) |
-| `GET /health/ready` | 真实读写一次数据库,失败返回 503 |
-| `GET /version` | 返回构建时注入的 SHA:`{"gitSha":"..."}` |
-| `GET /` | 人类可读的首页 |
-| `GET/POST /api/notes` | 笔记列表 / 新建笔记(新建会入队一个 `shout` 任务) |
-| `GET /api/jobs/:id` | 查看任务状态与结果 |
-| `GET/POST /api/files` | 文件存储目录的写入/列表(验证备份范围) |
+| 端点 | 行为说明 | 对应的部署验证点 |
+|---|---|---|
+| `GET /health/live` | 仅检查进程存活（不访问数据库） | 区分存活探针（Liveness）与就绪探针（Readiness） |
+| `GET /health/ready` | 执行一次真实的数据库读写往返，失败返回 `503` | 验证“端口能连上 ≠ 服务真可用” |
+| `GET /version` | 返回构建阶段注入的 Git 提交哈希：`{"gitSha":"..."}` | 让健康检查精确断言当前线上运行的代码版本 |
+| `GET /` | 人类可读的状态首页 | 浏览器直观验证部署结果与 HTTPS 链路 |
+| `GET/POST /api/notes` | 笔记列表与新建接口（新建笔记会自动入队一个 `shout` 异步任务） | 演示 Web 进程与后台 Worker 进程的协同发布 |
+| `GET /api/jobs/:id` | 查询异步任务的执行状态与处理结果 | 验证 `SIGTERM` 优雅退出、至少一次投递与任务幂等性 |
+| `GET/POST /api/files` | 本地持久化存储目录的文件写入与列举 | 验证备份与恢复演练必须同时覆盖数据库与磁盘文件 |
 
-## 本地开发
+## 本地开发与启动
 
 ```bash
-pnpm install                 # 生成 pnpm-lock.yaml(首次)
-cp .env.example .env         # 填入 POSTGRES_PASSWORD(本地随机生成一个)
-docker compose up -d db
-pnpm run migrate             # src/migrate.js:advisory lock + schema_migrations
-pnpm run build               # dist/ + version.json(GIT_SHA 注入)
-pnpm run dev                 # http://127.0.0.1:3000
-pnpm run worker              # 另一个终端:消费任务队列
+pnpm install                 # 首次安装依赖并生成 pnpm-lock.yaml
+cp .env.example .env         # 复制环境变量模板，将 POSTGRES_PASSWORD 设为任意随机字符串
+docker compose up -d db      # 启动本地 PostgreSQL 容器（仅绑定 127.0.0.1）
+pnpm run migrate             # 执行数据库迁移（src/migrate.js：基于 advisory lock 与 schema_migrations 表）
+pnpm run build               # 打包至 dist/ 并生成注入了 GIT_SHA 的 version.json
+pnpm run dev                 # 启动 Web 服务：http://127.0.0.1:3000
+pnpm run worker              # 在另一个终端启动后台 Worker 进程，消费异步任务队列
 ```
 
-## 目录
+## 目录结构
 
 ```
-src/            应用源码(构建时复制进 dist/)
-migrations/     SQL 迁移,按文件名序执行,记录进 schema_migrations
-deploy/         中级教程:参考设计的服务器侧实现(scripts/sudoers/systemd 单元)
-deploy/naive/   初级教程:朴素部署 v0 与备份脚本(对照组)
-.github/        CI + 部署 workflow(参考实现)
+src/            应用核心源码（构建时复制至 dist/）
+migrations/     SQL 数据库迁移脚本，按文件名顺序执行并记录至 schema_migrations 表
+deploy/         中级教程：生产级部署流水线的服务器端完整参考实现（含脚本、sudoers 与 systemd 单元）
+deploy/naive/   初级教程：v0 朴素部署与基础备份脚本（作为演进对照组）
+.github/        GitHub Actions 持续集成与自动部署工作流参考实现
 ```
 
-`.env.example` 里只有变量名,真实 `.env` 永远不进 git。
+> **安全提醒**：`.env.example` 仅保留配置项名称作为模板，包含真实密钥的 `.env` 文件永远不应提交至 Git 仓库。

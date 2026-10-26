@@ -1,12 +1,12 @@
 # Advanced: Experiments, Measurements, and Upgrade Decisions
 
-> **What you'll learn**: answer four real architecture questions with experiments — where to build, how to trigger deploys, how to switch traffic, how to manage credentials; turn backups from "should work" into "a drilled record with RPO/RTO numbers"; manufacture deployment incidents on yourself (kill -9, power loss, OOM) and watch the system recover; and leave with an honest decision table for "when is Kubernetes actually worth it".
+> **What you'll learn**: How to answer four real architectural questions through controlled experiments—where to build, how to trigger deployments, how to switch traffic, and how to manage credentials; how to turn backups from "they should work" into a drilled record backed by measured RPO and RTO numbers; how to inflict real deployment incidents on yourself (`kill -9`, power loss, OOM) and watch the system heal; and finally, how to walk away with an honest decision framework for when Kubernetes is actually worth the cost.
 >
-> **Prerequisites**: intermediate book completed (v1 pipeline live), and a willingness to break your own lab server. **Strongly recommended**: spin up a fresh hourly-billed VPS for this book's experiments and destroy it afterwards (total cost usually <$1). Do not run Chapters 2/3/7 on a machine serving real users.
+> **Prerequisites**: You have completed the Intermediate book (with the v1 pipeline running live) and are willing to break your own lab server. **Strongly recommended**: spin up a fresh, hourly-billed VPS for the experiments in this book and destroy it when you finish (total cost is usually <$1). Do not run the destructive experiments in Chapters 2, 3, or 7 on a machine serving real users.
 >
-> **Principles**: build once, deploy everywhere; rollback safety; drilled backups; contained blast radius; short-lived credentials; reconcilable desired state; simplicity first — including knowing when **not** to adopt a tool.
+> **Principles**: Build once, deploy everywhere; rollback safety; drilled backups; contained blast radius; short-lived credentials; reconcilable desired state; and simplicity first—including knowing when **not** to adopt a tool.
 
-**Method**: every section is one experiment, always in this format:
+**Method**: Every section in this book is a controlled experiment that follows a fixed structure:
 
 ```
 Hypothesis: we believe X (usually the reference design or an industry "best practice")
@@ -15,13 +15,13 @@ Observe:   what to watch, how to record
 Verdict:   X holds / fails; under what conditions a switch is worth it (upgrade trigger)
 ```
 
-> The iron rule of this format: **every conclusion needs evidence (commands, logs, exit codes), not assertions.** After each experiment, leave yourself one line of evidence in your notes.
+> The iron rule of this format: **every conclusion requires empirical evidence (commands, logs, exit codes), never bare assertions.** After completing each experiment, leave yourself at least one line of concrete evidence in your notes.
 
 ---
 
 ## Chapter 1: The Measurement Toolbox
 
-Architecture debates without numbers are just arguing. Four handy tools:
+Architecture debates without numbers are just opinions colliding. Before changing how we deploy, let's put together four practical measurement tools:
 
 ### 1.1 Measuring the downtime window (millisecond precision)
 
@@ -44,7 +44,7 @@ done
 # first-minus-last timestamp of the failure run = the downtime window (ms)
 ```
 
-> macOS note: `date +%s%3N` is a GNU extension; BSD date prints a literal `N`. To measure from a Mac, `brew install coreutils` and use `gdate` in the script.
+> **macOS note**: `date +%s%3N` uses a GNU extension; macOS's BSD `date` prints a literal `N` instead of milliseconds. To run this measurement from a Mac, install GNU coreutils (`brew install coreutils`) and replace `date` with `gdate` in the script.
 
 ### 1.2 Latency and throughput
 
@@ -56,12 +56,12 @@ hey -z 60s -c 10 https://deploy-demo.example.com/health/ready
 
 ### 1.3 RPO / RTO
 
-- **RPO** (how much data loss is tolerable) = backup interval + replication lag. Current scheme: daily dailies + per-deploy premigrates → worst case 24h.
-- **RTO** (how much downtime is tolerable) = detection time + recovery time. Chapter 6 measures "rebuild a machine from backup" end to end.
+- **RPO** (Recovery Point Objective — how much data loss is tolerable) = backup interval + replication lag. Under our current v1 scheme—daily scheduled backups plus a `premigrate` backup before every deploy—the worst-case data loss is 24h.
+- **RTO** (Recovery Time Objective — how much downtime is tolerable) = detection time + recovery time. In Chapter 6, we will measure end-to-end how long it takes to rebuild a machine from scratch using a backup.
 
 ### 1.4 The experiment log template
 
-Five lines per experiment, kept in `docs/experiments.md` in your repo:
+Record five lines per experiment in `docs/experiments.md` inside your repository:
 
 ```
 ## E<number> <name> (date)
@@ -78,20 +78,20 @@ Trigger:   (under what conditions to switch / not switch)
 
 ### 2.1 Baseline: measure v1's window
 
-**Hypothesis**: the intermediate book's "atomic switch + restart" still has an observable downtime window (tens to hundreds of ms).
+**Hypothesis**: The Intermediate book's "atomic symlink switch + service restart" still leaves an observable downtime window lasting tens to hundreds of milliseconds.
 
 **Steps**:
-1. [local] start `measure-downtime.sh`;
-2. [server] trigger a deployment (change an inconsequential string, push);
-3. Ctrl-C after it finishes; analyze `/tmp/downtime.tsv`.
+1. **[local]** Start `measure-downtime.sh` against your live endpoint.
+2. **[server]** Trigger a deployment (change an inconsequential string and push).
+3. Press Ctrl-C once the deployment completes, then analyze `/tmp/downtime.tsv`.
 
-**Observe**: a run of `000`s — and between them, gaps in the `200`s. Typical numbers: **200–1500ms** (depending on how long systemd waits for graceful stop and how fast the new process boots). **Record the truth; do not claim zero downtime.** In-flight requests tell their own story: graceful shutdown completes most of them, but connections being established at that instant fail.
+**Observe**: You will see a streak of `000` responses—and between them, a gap in the stream of `200`s. Typical durations run from **200 to 1500ms**, depending on how long systemd waits for the old process to drain and how quickly the new process boots. **Record the honest numbers; do not claim zero downtime.** In-flight requests tell their own story: graceful shutdown lets most established requests finish, but new connections arriving while the listening socket is closed fail immediately.
 
-**Verdict**: v1's window = stop-old + start-new + time-to-healthy. Killing it means keeping **old and new alive simultaneously** — that's blue-green.
+**Verdict**: The v1 downtime window equals old-process stop time + new-process boot time + time to become healthy. Eliminating that gap requires keeping **both the old and new processes alive simultaneously**—which is the essence of blue-green deployment.
 
 ### 2.2 Minimal blue-green: two slots + an Nginx switch
 
-Single-machine blue-green needs no orchestrator: two slots, Nginx remembering "who's on stage", one switch script.
+Single-machine blue-green deployment needs no container orchestrator: just two release slots, an Nginx upstream block that remembers which slot is currently "on stage," and a short switch script.
 
 **Layout** (on the lab machine):
 
@@ -103,7 +103,7 @@ Single-machine blue-green needs no orchestrator: two slots, Nginx remembering "w
 └── current → blue           # "who is on stage"
 ```
 
-App config: blue on `PORT=3010`, green on `3020` (via `runtime.env.blue/green`). Nginx:
+Application configuration: run blue on `PORT=3010` and green on `3020` (supplied via `runtime.env.blue/green`). Update Nginx to route through an `upstream` block:
 
 ```nginx
 # replace the location block in /etc/nginx/sites-available/demo-app:
@@ -153,40 +153,40 @@ systemctl stop "demo-app-web@$OLD" "demo-app-worker@$OLD" || true
 echo "switched to $NEXT ($SHA)"
 ```
 
-(The full templating — a `demo-app-web@.service` unit template, both `runtime.env` variants, and wiring into `deploy.sh` by replacing its steps 12/13 with this script — is left as the chapter's exercise. Every idea comes from the intermediate book; the only change is "one current" becoming "two slots".)
+(Completing the setup—creating a templated `demo-app-web@.service` unit, preparing both `runtime.env` variants, and wiring this script into `deploy.sh` in place of steps 12 and 13—is left as this chapter's hands-on exercise. Every concept comes straight from the Intermediate book; the only shift is moving from a single `current` symlink to alternating between two slots.)
 
 ### 2.3 Measure and conclude
 
-**Steps**: repeat 2.1's measurement with the blue-green path.
+**Steps**: Repeat the downtime measurement from Section 2.1, this time deploying through the blue-green path.
 
-**Observe**: **not a single 000**. Nginx's `reload` swaps upstreams smoothly; old connections finish on old workers. Window ≈ **0ms** (honest caveats: the DB migration still happens before the flip; long connections/WebSockets need extra design; during the 30s of dual-running workers, either side may claim a job — and `FOR UPDATE SKIP LOCKED` from the intermediate book happens to make that safe).
+**Observe**: `/tmp/downtime.tsv` records **not a single `000`**. Nginx's `reload` swaps upstreams seamlessly while existing connections finish draining on the old workers. The measured downtime window is **≈ 0ms**. (Honest caveats still apply: database migrations still run before the flip; long-lived connections and WebSockets need explicit reconnect handling; and during the 30 seconds when old and new workers run side by side, either worker may claim a queued job—which is exactly why `FOR UPDATE SKIP LOCKED` from the Intermediate book matters.)
 
 **Verdict and upgrade triggers**:
 
-| Option | Downtime | Cost | Worth it when |
+| Option | Downtime | Complexity cost | Worth it when |
 |---|---|---|---|
-| v1 restart switch | ~0.2–1.5s | low | internal tools, low traffic, users tolerate "refresh during release" |
-| single-machine blue-green | ≈0ms | +slot management, 2× process memory | public services, real SLAs, memory fits two copies |
-| multi-machine rolling / K8s | ≈0ms | full orchestration | too many machines to herd manually (Chapter 9) |
+| v1 restart switch | ~0.2–1.5s | Low | Internal tools, low traffic, or users who can tolerate a brief refresh during deploys |
+| Single-machine blue-green | ≈0ms | +slot management, 2× process memory | Public-facing services, formal SLAs, and enough RAM to hold two copies at once |
+| Multi-machine rolling / K8s | ≈0ms | Full orchestration stack | Too many machines to manage by hand (see Chapter 9) |
 
 ---
 
 ## Chapter 3: Experiment — Where to Build
 
-**Hypothesis**: building on the production machine (a) degrades the live service, (b) breaks deploys without internet, (c) produces non-reproducible artifacts. CI-built artifacts fix all three, at the cost of artifact distribution infrastructure.
+**Hypothesis**: Building directly on the production server has three drawbacks: (a) it steals CPU and RAM from the live service, (b) an internet or registry outage blocks deployments, and (c) building the same commit twice may not produce identical artifacts. Building artifacts in CI fixes all three, at the cost of artifact distribution infrastructure.
 
 ### 3.1 Baseline: the cost of building in place
 
 **Steps**:
-1. [server] keep resources tight — that 1GB lab machine is perfect.
-2. [local] run `hey -z 120s -c 10` while triggering a deployment.
-3. Record `hey`'s p99 and error count during the deploy; `free -m` for memory; if OOM struck, `journalctl -k | grep -i oom` for evidence.
+1. **[server]** Keep resources constrained—a 1GB RAM lab machine is ideal for this test.
+2. **[local]** Run `hey -z 120s -c 10` continuously while triggering a deployment.
+3. Record `hey`'s p99 latency and error count during the deploy; watch available memory with `free -m`; and if the kernel OOM-killer strikes, capture the evidence with `journalctl -k | grep -i oom`.
 
-**Observe** (typical on 1GB): during `pnpm install` + build, p99 climbs visibly (2–5×); under memory pressure the build process may get OOM-killed → **the deploy fails while the live service keeps serving** (thanks to `.partial` isolation) — record that too; it's a point in v1's favor.
+**Observe** (typical on a 1GB machine): During `pnpm install` and TypeScript compilation, p99 latency climbs sharply (often 2–5×). Under tighter memory pressure, the Node build process may be killed by the OOM killer—**the deployment fails, yet the live service keeps serving traffic without interruption** thanks to `.partial` directory isolation. Record that observation too; it is a real strength of the v1 design.
 
 ### 3.2 The CI-artifact variant
 
-Add a `package` job to the workflow (the essential changes):
+Add a `package` job to your GitHub Actions workflow (the essential changes):
 
 ```yaml
 package:
@@ -210,15 +210,15 @@ package:
         retention-days: 14
 ```
 
-On the server, replace deploy.sh steps 6–8 with "download the artifact + verify sha256 + untar" (via `gh run download` or an object-storage URL). **The point: build once, deploy everywhere — what CI tested, packaged, and what runs in production are the same bytes.**
+On the server, replace steps 6–8 of `deploy.sh` with "download the artifact, verify its `sha256` checksum, and extract the tarball" (via `gh run download` or a pre-signed object-storage URL). **The core principle: build once, deploy everywhere—the exact bytes that CI tested and packaged are the exact bytes that run in production.**
 
 ### 3.3 The three comparisons
 
 | # | Experiment | Server-build (v1) | CI-artifact |
 |---|---|---|---|
-| 1 | load test during deploy (as 3.1) | p99 degrades | **no degradation** (the server only untars) |
-| 2 | deploy with internet cut | `git fetch` fails immediately; **but rollback.sh still works** (it never touches the network) | once the artifact has arrived, unpacking needs no network — but the transfer channel itself does. **Common ground: rollback is always offline-capable** |
-| 3 | reproducibility | build the same SHA twice, `sha256` **differs** (`dist/version.json` contains `buildTime`!) | same; fix by dropping `buildTime` or pinning `SOURCE_DATE_EPOCH` — afterwards identical checksums |
+| 1 | Load test during deploy (same as 3.1) | p99 latency degrades | **No degradation** (the server only extracts a tarball) |
+| 2 | Deploy with outbound internet cut | `git fetch` fails immediately; **however, `rollback.sh` still works** because it never touches the network | Once the artifact has arrived over the deploy channel, extraction needs no internet—though the transfer channel itself still does. **Common ground: rollback is always offline-capable** |
+| 3 | Reproducibility | Build the same SHA twice and the `sha256` **differs** (`dist/version.json` embeds `buildTime`!) | Same root cause; fix it by dropping `buildTime` or pinning `SOURCE_DATE_EPOCH`, after which repeated builds yield identical checksums |
 
 **Observe 3, live**:
 
@@ -238,19 +238,19 @@ cd /srv/demo-app && sudo -u deploy bash -c \
 
 | Dimension | Server build | CI build |
 |---|---|---|
-| impact on live | yes (worse on smaller machines) | none |
-| network dependency | fetch + package registry | only the transfer channel |
-| rollback speed | instant from releases/ | identical (the releases layout is unchanged) |
-| infrastructure | zero | artifact storage + download credentials |
-| **switch when** | — | machines ≤2GB / multiple servers needing the same artifact / compliance (artifact archival) / flaky package registry |
+| Impact on live traffic | Yes (worse on smaller machines) | None |
+| Network dependency | `git fetch` + language package registry | Only the artifact transfer channel |
+| Rollback speed | Instant from `releases/` | Identical (the `releases/` layout is unchanged) |
+| Extra infrastructure | Zero | Artifact storage + download credentials |
+| **Switch when** | — | Machines ≤2GB RAM / multiple servers deploying the same build / compliance requires artifact archival / flaky package registries |
 
-For a single-machine demo-app: **not switching is also a defensible call** (simplicity first). Having run both experiments, it's your data-backed decision — not folklore.
+For a single-machine `demo-app`, **staying with server-side builds is also a completely defensible engineering call** (simplicity first). Having run both experiments yourself, that decision is now backed by your own data rather than industry folklore.
 
 ---
 
 ## Chapter 4: Experiment — Push (SSH) or Pull (Poll)
 
-**Hypothesis**: Push-SSH requires an inbound port 22, permanently exposed to scans and brute force; a Pull model (the server polls GitHub) can shrink the inbound surface to zero, at the cost of latency and failure visibility.
+**Hypothesis**: Push-over-SSH requires keeping inbound port 22 open, leaving it permanently exposed to internet-wide scanning and brute-force attacks. A Pull model—where the server periodically polls GitHub—shrinks the inbound attack surface to zero, at the cost of polling latency and DIY failure visibility.
 
 ### 4.1 First, look at what port 22 sees
 
@@ -262,9 +262,9 @@ sudo apt install -y fail2ban && sudo systemctl enable --now fail2ban   # the min
 
 ### 4.2 The pull prototype (30 core lines)
 
-**The reuse trick**: pull is not a new deploy system — it's a **different caller**. `deploy.sh` changes by zero characters.
+**The reuse insight**: Pull is not a brand-new deployment system—it is simply a **different caller**. `deploy.sh` does not change by a single character.
 
-`# file: /opt/demo-app/bin/poll.sh` (root-owned; run by a systemd timer every 60s):
+`# file: /opt/demo-app/bin/poll.sh` (owned by `root`, triggered every 60s by a systemd timer):
 
 ```bash
 #!/usr/bin/env bash
@@ -304,19 +304,19 @@ Persistent=true
 WantedBy=timers.target
 ```
 
-Once enabled: `sudo ufw delete allow OpenSSH` (or restrict to your IP range) — **inbound surface zero**. That's the entire security payoff of pull.
+Once the timer is enabled, you can run `sudo ufw delete allow OpenSSH` (or restrict SSH to your office IP range)—**shrinking your inbound SSH exposure to zero**. That is the entire security payoff of the pull model.
 
 ### 4.3 The comparison
 
 | Dimension | Push-SSH | Pull |
 |---|---|---|
-| inbound exposure | port 22 (mitigated by forced command + fail2ban) | **zero** (only 80/443) |
-| deploy latency | seconds after push | ≤ polling interval (60s) |
-| failure visibility | the Actions page goes red | DIY (logs/alerting, Chapter 8) |
-| audit | initiated by CI, clear chain | server-initiated, actor=poller |
-| external dependency | Actions healthy + server reachable | server can egress to GitHub |
+| Inbound exposure | Port 22 (mitigated by forced command + fail2ban) | **Zero** (only ports 80/443 open) |
+| Deploy latency | Seconds after push | ≤ polling interval (60s) |
+| Failure visibility | The GitHub Actions page turns red immediately | DIY (logs and alerting; see Chapter 8) |
+| Audit trail | Initiated by CI, clear causal chain | Server-initiated (`actor=poller`) |
+| External dependency | GitHub Actions healthy + server reachable from the internet | Server can make outbound HTTPS requests to GitHub |
 
-**Upgrade triggers**: ≥2 machines (push-everything-at-once), a "no inbound at all" compliance requirement, or brute-force noise annoying enough to matter → pull. Single machine + wanting instant feedback in the Actions UI → push. **Coexistence is also legitimate** (pull as a reconciliation backstop — Chapter 8).
+**Upgrade triggers**: Switch to Pull when you have ≥2 machines (and don't want CI pushing to each host in a loop), face a strict "no inbound management ports" compliance rule, or want to eliminate SSH brute-force noise entirely. Stick with Push when you run a single machine and value instant feedback in the GitHub Actions UI. **Running both side by side is also a great pattern**—using Push for instant deploys and Pull as a periodic reconciliation backstop (see Chapter 8).
 
 ---
 
@@ -324,9 +324,9 @@ Once enabled: `sudo ufw delete allow OpenSSH` (or restrict to your IP range) —
 
 ### 5.1 The blast radius of static keys → short-lived SSH certificates
 
-**Hypothesis**: the CI private key is long-lived and static; if leaked, the exposure is "trigger a deploy of any main SHA". Short-lived certificates compress the key's validity from "forever" to "minutes".
+**Hypothesis**: The CI private key in v1 is static and long-lived; if leaked, an attacker can trigger a deployment of any commit on `main` at any time. Short-lived SSH certificates compress a credential's lifetime from "forever" down to a few minutes.
 
-**Minimal demo** (proof of concept; production can wait):
+**Minimal proof of concept** (worth seeing in the lab; production can wait until you hit the trigger):
 
 ```bash
 # 1. create a CA once on the server (root guards the CA private key; it never leaves the machine)
@@ -345,24 +345,24 @@ ssh-keygen -s /etc/ssh/democa -I ci-deploy -n deploy -V +5m \
 ssh -i key -o CertificateFile=key-cert.pub deploy@host "deploy <sha>"
 ```
 
-**Observe**: 5 minutes later, the same key is refused (`Permission denied`). The blast radius shrinks from "forever" to "any legitimate SHA within 5 minutes" — provided `force-command` is present too: **validity governs how long, the forced command governs what**. Either alone is insufficient (a short-lived cert without force-command is still a full-shell pass).
+**Observe**: Five minutes later, the exact same key is rejected (`Permission denied`). The blast radius of a leaked credential shrinks from "forever" to "any legitimate SHA within a five-minute window"—provided `force-command` is baked into the certificate as well. **Expiration controls *how long* a key works; the forced command controls *what* it is allowed to do.** Neither is sufficient on its own: a short-lived certificate without `force-command` is still a five-minute pass to an interactive shell.
 
-**Verdict**: for a single small project, static key + forced command + audit already keeps the radius tiny (simplicity first: running a CA costs more than it saves); **multi-machine / multi-team / compliance** is where certificates (or OIDC-issued dynamic credentials) start paying. Triggers: keys shared into >3 CI repos, or any suspected leak, ever.
+**Verdict**: For a single small project, a static key constrained by a forced command and an audit log already keeps the blast radius tiny (simplicity first: operating a CA safely costs more effort than it saves). **Multi-machine fleets, multi-team organizations, and compliance environments** are where short-lived certificates (or OIDC-issued dynamic credentials) earn their keep. Upgrade triggers: sharing deploy keys across >3 CI repositories, or experiencing even a single suspected key leak.
 
 ### 5.2 TOCTOU — the builder and the runner are different people
 
-**Hypothesis**: releases are built by the deploy user and executed by the app user. Between "build finished" and "service restarted", can the deploy user (or an attacker holding that identity) tamper with the code about to run?
+**Hypothesis**: Releases are built by the `deploy` user and executed by the `app` user. In the window between "build finished" and "service restarted," can the `deploy` user (or an attacker who compromises that account) tamper with the code that is about to run?
 
-**Steps** (lab machine):
-1. Start a deploy and, before its health check passes, simulate tampering: `sudo -u deploy sh -c 'echo "process.exit(99)" >> /srv/demo-app/releases/<sha>/dist/server.js'`
-2. Watch the outcome: the health check fails → rollback. The tampering **never reached production**, but note: **this release is now poisoned, and v1 has no mechanism to notice that release contents no longer match the SHA.**
-3. The fix: after building, `chown -R root:root` the release and make it read-only (deploy hands off write access the moment the build ends); have the migration wrapper verify ownership before `runuser`. Apply the hardening, rerun 1–2: tampering dies on EPERM.
+**Steps** (on the lab machine):
+1. Start a deployment and, **before** its health check finishes, simulate tampering: `sudo -u deploy sh -c 'echo "process.exit(99)" >> /srv/demo-app/releases/<sha>/dist/server.js'`
+2. Watch the outcome: the health check fails and triggers an automatic rollback. The tampered code **never stayed live in production**, but look closer: **that `<sha>` release directory is now permanently poisoned, and v1 has no mechanism to detect that a release directory's contents no longer match its Git SHA.**
+3. The fix: immediately after the build step finishes, run `chown -R root:root` on the release directory and make it read-only (so `deploy` surrenders write access the moment the build completes), and have `migrate-wrapper.sh` verify root ownership before invoking `runuser`. Apply this hardening and rerun steps 1–2: the tampering attempt dies immediately with `EPERM`.
 
-**Verdict**: the suspicion is **confirmed** (the window exists in v1); the fix = "drop privileges immediately after building". Related residual risk: `pnpm install` postinstall scripts execute as deploy, which opens the malicious-build door — a package could read the deploy key inside repo.git. Minimal mitigation: keep the key read-only and easy to rotate; the real fix is CI-built artifacts (Chapter 3 — the server never runs a package manager at all).
+**Verdict**: The hypothesis is **confirmed**—a time-of-check to time-of-use (TOCTOU) window exists in v1, and the fix is dropping write privileges immediately after building. Note a related residual risk: `pnpm install` runs package `postinstall` scripts under the `deploy` user, which means a compromised npm dependency could read the repository's deploy key from `repo.git`. The minimal mitigation is keeping that deploy key read-only and easy to rotate; the complete fix is building artifacts in CI (Chapter 3) so the production server never runs a package manager at all.
 
 ### 5.3 Boundary inputs against the sudoers glob
 
-Use the intermediate book's sudoers as the target range:
+Treat the Intermediate book's `sudoers` file as a firing range and test boundary inputs against it:
 
 ```bash
 sudo -u deploy sudo /opt/demo-app/bin/migrate-wrapper.sh "abc...40-hex... extra arg"
@@ -372,7 +372,7 @@ sudo -u deploy sudo /opt/demo-app/bin/migrate-wrapper.sh "../../../../etc/passwd
 # layer two: had the glob been bypassed (e.g. arguments with spaces), the in-script case refuses again
 ```
 
-**Verdict**: the glob stops wild paths; the in-script validation stops the "glob spans spaces" bypass — defense in depth isn't a slogan, it's two independent checks that each fired. Residual: audit.sh's `*` can still be spammed by deploy — Chapter 8.
+**Verdict**: The `sudoers` character-class glob blocks path traversal at the gate, while the script's internal validation blocks multi-word arguments that slip past `sudo`'s space-spanning `*` glob. Defense in depth is not a slogan—it is two independent checks that each catch what the other might miss. Residual risk: the trailing `*` on `audit.sh` still allows the `deploy` user to spam the local audit log; we close that gap in Chapter 8.
 
 ---
 
@@ -380,9 +380,9 @@ sudo -u deploy sudo /opt/demo-app/bin/migrate-wrapper.sh "../../../../etc/passwd
 
 ### 6.1 The correct shape of a destructive migration
 
-**Hypothesis**: a contract operation like "drop the `notes.body` column", deployed in one shot, breaks rollback (the old code still SELECTs the column). A two-phase release keeps every rollback safe.
+**Hypothesis**: A destructive (`contract`) schema change such as dropping the `notes.body` column, if deployed in a single release, breaks rollback—because the previous version of the application code still runs `SELECT body`. Splitting the change into a two-phase expand/contract sequence keeps rollback safe at every point in time.
 
-**The wrong way, live** (lab machine — study the accident before learning the cure):
+**The wrong way, live** (on the lab machine—witness the failure before applying the cure):
 
 ```bash
 # drop the column + deploy → then manually rollback.sh to the old code
@@ -390,7 +390,7 @@ sudo -u deploy sudo /opt/demo-app/bin/migrate-wrapper.sh "../../../../etc/passwd
 # you have just manufactured the textbook "rollback-unsafe" case
 ```
 
-**The right way — split 003 into two releases**:
+**The right way — split migration 003 into two separate releases**:
 
 ```
 Release 1 (expand): add the new column / dual-write / new code tolerates old shape
@@ -402,18 +402,18 @@ Release 2 (contract): only after confirming you'll never roll back further
   server.js touches only content → deploy
 ```
 
-**The rollback-safety matrix** (do it yourself; fill in what you observe):
+**The rollback-safety matrix** (run each combination yourself and record what you observe):
 
 | Combination | Old schema + new code | New schema (expand) + old code | New schema (contract) + old code |
 |---|---|---|---|
-| Result | ✅ compatible (the point of expand) | ✅ compatible (the point of dual-write) | ❌ crashes (hence: confirm no further rollback before contracting) |
+| Outcome | ✅ Compatible (the whole point of expand) | ✅ Compatible (the whole point of dual-writing) | ❌ Crashes (which is why you only contract once you are certain you won't roll back to the pre-expand code) |
 
 ### 6.2 Big-table migration locks
 
 **Steps**:
-1. Create a 500k-row table: `INSERT INTO notes(title) SELECT 'row'||g FROM generate_series(1,500000) g;`
-2. From another connection, continuously UPDATE random rows (simulating live writes).
-3. Compare two ways of creating an index:
+1. Populate a 500,000-row table: `INSERT INTO notes(title) SELECT 'row'||g FROM generate_series(1,500000) g;`
+2. In a second database session, continuously `UPDATE` random rows to simulate live production writes.
+3. Compare two ways of adding an index:
 
 ```sql
 -- A: plain index (locks writes)
@@ -423,9 +423,9 @@ CREATE INDEX CONCURRENTLY idx_fast ON notes(created_at); -- writes continue
 -- companion: SET lock_timeout='3s' makes lock waits fail fast instead of queueing forever
 ```
 
-**Observe**: with A, the writer queues (`SELECT * FROM pg_stat_activity WHERE wait_event_type='Lock'` shows it); with B, writes flow (trade-offs: slower build, not allowed inside a transaction).
+**Observe**: Under approach A, concurrent writes stall in a queue (visible via `SELECT * FROM pg_stat_activity WHERE wait_event_type='Lock'`). Under approach B, writes continue uninterrupted (the trade-off: index creation takes longer and cannot run inside a transaction block).
 
-**Verdict**: the production migration trio — `lock_timeout`, `CONCURRENTLY`, off-peak execution; and any time you're unsure "does this migration lock?", **dry-run it on a replica first** (next item).
+**Verdict**: Adopt the production migration trio—`lock_timeout`, `CONCURRENTLY`, and off-peak execution. And whenever you find yourself wondering *"Will this migration lock the table?"*, **rehearse it on a restored copy of the database first** (see the next section).
 
 ### 6.3 Migration dry-runs
 
@@ -437,33 +437,33 @@ DATABASE_URL=postgres://drill:drill@127.0.0.1:55432/drill node dist/migrate.js
 # failure? → the migration is broken, and the production database was never touched
 ```
 
-Wiring "rehearse on a restored copy before every migration" into deploy.sh (enabled when `MIGRATE_DRYRUN=true`) is standard practice at many larger teams.
+Wiring "rehearse against a freshly restored scratch database before touching production" into `deploy.sh` (toggled via `MIGRATE_DRYRUN=true`) is standard practice on many mature engineering teams.
 
 ### 6.4 The measured RPO/RTO table (the drilled-backups deliverable)
 
-Complete this table on your lab machine (the numbers are yours; the format is universal):
+Fill in every row of this table on your lab machine (the numbers are specific to your setup; the template is universal):
 
-| Item | Value | How measured |
+| Metric | Measured value | How to measure |
 |---|---|---|
-| Backup size (DB/storage) | ___ KB | `du -h` |
+| Backup size (DB / storage) | ___ KB | `du -h` |
 | Backup duration | ___ s | `time backup.sh manual` |
-| Restore duration (empty DB) | ___ s | `time pg_restore` (Intermediate Ch.6) |
-| Full-machine rebuild RTO (zero to live) | ___ min | the disaster drill in Appendix B, timed |
-| RPO (daily scheme) | worst case 24h | by definition |
-| RPO (with hourly archive/WAL) | worst case 1h | Chapter 9's upgrade trigger |
-| Off-site copy lag | ___ | the rsync cron's interval |
+| Restore duration (into an empty DB) | ___ s | `time pg_restore` (Intermediate Ch. 6) |
+| Full-machine rebuild RTO (zero to live traffic) | ___ min | Time the full disaster recovery drill in Appendix A/B |
+| RPO (`daily` backup scheme) | Worst case 24h | Defined by the backup schedule |
+| RPO (with hourly archive / WAL shipping) | Worst case 1h | See Chapter 9's upgrade triggers |
+| Off-site copy lag | ___ | Interval of your `rsync` or `rclone` cron job |
 
-**GitLab's 2017 lesson** wasn't "no backups" — it was **never-verified restores**. The moment this table is filled in, your backups can be said to exist.
+**The lesson of GitLab's famous 2017 database incident** wasn't "they had no backups"—it was that **nobody had regularly verified a restore**. The moment every cell in this table is filled with real measurements, your backups truly exist.
 
 ---
 
 ## Chapter 7: The Crash-Consistency Lab
 
-In this chapter you are a QA engineer with malicious intent. Every experiment's acceptance bar is the same sentence: **recover automatically, or land in an explicitly recoverable state; never leave debris, never corrupt production.**
+In this chapter, you play a QA engineer with malicious intent. Every experiment has the same acceptance bar: **the system must either recover automatically or land in an explicitly recoverable state—never leaving half-built debris behind, and never corrupting the live service.**
 
 ### 7.1 kill -9 mid-deploy
 
-For each of five moments: during build / after backup / mid-migration / post-migration pre-switch / during health check.
+Send `SIGKILL` to `deploy.sh` at five distinct moments in the pipeline: during the build, right after backup, mid-migration, after migration but before the symlink switch, and during the health check.
 
 ```bash
 # [server] while a deploy runs, find deploy.sh's PID
@@ -471,19 +471,19 @@ ps aux | grep '[d]eploy.sh'
 sudo kill -9 <pid>
 ```
 
-**Expected-outcome table** (verify cell by cell):
+**Expected-outcome table** (verify every row hands-on):
 
-| Moment | Residue | Re-run outcome |
+| Moment killed | Residue left on disk | Outcome when re-running deploy |
 |---|---|---|
-| during build | `.partial/` | ✅ auto-cleaned and rebuilt |
-| after backup | one extra backup (harmless) | ✅ continues |
-| mid-migration | the failed migration fully rolled back (transactional) | ✅ |
-| post-migration pre-switch | DB new, code old (safe during expand) | ✅ |
-| during health check | current flipped but unconfirmed | ✅ idempotency/health checks converge |
+| During build | `.partial/` directory | ✅ Automatically wiped and rebuilt cleanly |
+| After backup | One extra backup file (harmless) | ✅ Proceeds normally |
+| Mid-migration | Failed migration rolled back cleanly by Postgres transaction | ✅ Re-runs migration and continues |
+| Post-migration, pre-switch | DB schema is new, running code is still old (safe under expand) | ✅ Skips already-applied migration idempotently and finishes the switch |
+| During health check | `current` symlink flipped, but post-switch verification incomplete | ✅ Idempotency and health checks converge on a healthy state |
 
 ### 7.2 Reboot mid-everything
 
-Deploy running, then `sudo reboot` (mid-migration is the most exciting moment). After boot: Postgres back, units active, the flock lock (in /run, tmpfs) evaporated, `/srv/demo-app/current` pointing at a consistent state. Debris anywhere? Trigger one deploy and watch it converge.
+Trigger a deployment and run `sudo reboot` right in the middle of it (catching it mid-migration is the most exciting test). Once the machine comes back up, inspect the state: the Postgres container restarts, systemd units report `active`, the `flock` lock file (stored on `/run`, an in-memory `tmpfs`) has vanished cleanly with the reboot, and `/srv/demo-app/current` still points to a consistent release. Spot any `.partial` debris? Trigger one fresh deploy and watch the pipeline clean it up and converge.
 
 ### 7.3 Disk nearly full
 
@@ -505,7 +505,7 @@ sudo rm /opt/demo-app/freeze
 
 ### 7.5 Script drift detection
 
-**Hypothesis**: you changed deploy.sh in the repo but forgot to reinstall; the server keeps running the old script, and **nothing notices**.
+**Hypothesis**: Someone edits `deploy.sh` in the Git repository but forgets to re-run `install.sh` on the server. Production silently keeps running the stale script, and **nothing alerts you to the drift**.
 
 ```bash
 # verify: add a comment line in the repo, push, don't reinstall → behavior unchanged (old script) → drift confirmed
@@ -517,7 +517,7 @@ sudo sh -c 'cd /opt/demo-app/bin && sha256sum app.conf deploy-entry deploy.sh he
   | sha256sum -c - || echo "DRIFT: installed scripts differ from repo — run install.sh"
 ```
 
-**Verdict**: drift detection is desired-state reconciliation in miniature ("the scripts that should be installed" vs "the scripts that are installed" must be comparable). When upgrading install.sh, update the fingerprint file with it (it's part of what gets reconciled).
+**Verdict**: Drift detection is desired-state reconciliation in miniature: you must always be able to compare "the scripts that *should* be installed" against "the scripts that *are* installed." Whenever you update `install.sh`, remember to update the checksum list alongside it—the installer itself is part of the state being reconciled.
 
 ---
 
@@ -525,7 +525,7 @@ sudo sh -c 'cd /opt/demo-app/bin && sha256sum app.conf deploy-entry deploy.sh he
 
 ### 8.1 Desired-state reconciliation
 
-`# file: /opt/demo-app/bin/reconcile.sh` (cron, or piggybacked on poll):
+`# file: /opt/demo-app/bin/reconcile.sh` (run via cron, or piggybacked onto `poll.sh`):
 
 ```bash
 #!/usr/bin/env bash
@@ -547,7 +547,7 @@ printf 'live=%s\nlatest=%s\nscripts_drift=%s\n' "${LIVE:0:12}" "${LATEST:0:12}" 
 
 ### 8.2 Failure notifications
 
-Minimum viable: a webhook (or even a local file collector you actually look at):
+The minimum viable alerting setup is a single webhook call—or even a local collector file that you actually check every day:
 
 ```bash
 # deploy.sh's die() already appends to audit.log; add:
@@ -555,20 +555,20 @@ curl -fsS -m 3 "$NOTIFY_WEBHOOK" -d "deploy failed: sha=$SHA step=$step" >/dev/n
 # NOTIFY_WEBHOOK → Slack/Lark/Telegram incoming webhook, or a local file service
 ```
 
-> Note the `|| true`: a failed notification must never fail the deployment itself (notifications are a side channel, not the path).
+> Notice the trailing `|| true`: a broken notification webhook must never cause a deployment or rollback to fail. Notifications are a side channel, not part of the critical path.
 
 ### 8.3 Change control for the deploy system itself
 
-Deploy scripts, sudoers, and workflows are high-risk files that can change production behavior:
+Deployment scripts, `sudoers` rules, and CI workflows are high-privilege files capable of altering production behavior. Guard them accordingly:
 
-1. **CODEOWNERS** (`.github/CODEOWNERS` in the repo):
+1. **Enforce review with CODEOWNERS** (`.github/CODEOWNERS` in the repository):
 
 ```
 /deploy/            @your-team/ops
 .github/workflows/  @your-team/ops
 ```
 
-2. **A deploy-system self-check CI** (added to ci.yml's check job):
+2. **Add a deploy-system self-check to CI** (inside the `check` job of `ci.yml`):
 
 ```yaml
 - run: sudo apt-get install -y shellcheck && shellcheck deploy/*.sh
@@ -577,98 +577,98 @@ Deploy scripts, sudoers, and workflows are high-risk files that can change produ
   run: sudo visudo -cf deploy/demo-app.sudoers
 ```
 
-3. Tamper-proof audit (5.3's residual): audit already goes to syslog via `logger` — collect it on **another** machine, one the deploy user cannot touch.
+3. **Tamper-evident audit logs** (closing the residual gap from Section 5.3): `audit.sh` already forwards entries to `syslog` via `logger`. Configure `rsyslog` or `journald` to ship those logs over the network to **a separate host** that the `deploy` user has no access to.
 
 ---
 
 ## Chapter 9: The Upgrade Decision Records (ADRs)
 
-One-line verdicts plus quantified triggers per decision. **If the trigger isn't met, don't adopt** (simplicity first, in practice).
+Each row below pairs a one-line architectural recommendation with a concrete, quantifiable trigger. **If you haven't hit the trigger, don't adopt the complexity**—that is what "simplicity first" looks like in day-to-day engineering.
 
-| Decision | Trigger (any one) | Until then |
+| Decision | Upgrade trigger (adopt when any one is met) | What to use until then |
 |---|---|---|
-| **CI-built artifacts** | machines ≤2GB / ≥2 servers / compliance archival | server-side build (v1 as-is) |
-| **Pull-based deploys** | ≥2 machines / "no inbound SSH" compliance / brute-force noise out of control | Push-SSH + fail2ban + forced command |
-| **Blue-green** | a public SLA / users complained about the window | atomic switch + off-peak deploys |
-| **Short-lived certs / OIDC** | keys for >3 consumers / any suspected leak / multi-team CI | static key + audit + a fast-rotation plan |
-| **Daily → hourly backups / WAL archiving** | a 24h RPO is unacceptable (transactions/user data) | daily + pre-deploy |
-| **Off-site backups to object storage** (rclone cron → S3/R2) | **immediately** (cost ≈ free; benefit = the fire scenario) | rsync to a laptop (the minimum) |
-| **Ansible** | you've copy-pasted the same manual ops onto >5 machines | this course's install.sh |
-| **Terraform** | >3 kinds of cloud resources, changing often | manual creation, well documented |
-| **Docker images + registry** | the natural evolution of CI artifacts + multi-machine distribution | tarball artifacts |
-| **Kubernetes** | >10 machines / >15 services / a dedicated platform person / genuinely frequent elastic scaling | single-machine systemd + this pipeline |
+| **CI-built artifacts** | Server RAM ≤2GB / ≥2 servers / compliance requires artifact archival | Server-side build (v1 as-is) |
+| **Pull-based deploys** | ≥2 machines / compliance forbids inbound SSH / brute-force log noise becomes unmanageable | Push-SSH + fail2ban + forced command |
+| **Blue-green switching** | External SLA commitments / real users noticing the restart window | Atomic symlink switch + off-peak deploys |
+| **Short-lived certs / OIDC** | Deploy keys shared across >3 consumers / any suspected leak / multi-team CI | Static key + audit log + rehearsed key-rotation runbook |
+| **Daily → hourly backups / WAL archiving** | A 24h RPO is unacceptable (financial transactions or high-frequency user data) | Daily scheduled backup + pre-deploy backup |
+| **Off-site backups to object storage** (`rclone` cron → S3/R2) | **Immediately** (storage cost is near zero; protects against datacenter-level loss) | Periodic `rsync` to a laptop (bare minimum) |
+| **Ansible** | You have copy-pasted the same manual setup commands across >5 machines | This course's `install.sh` bootstrap script |
+| **Terraform** | >3 distinct cloud resource types that change frequently | Manual provisioning documented in the repo |
+| **Docker images + registry** | The natural next step once you already combine CI-built artifacts with multi-machine distribution | Tarball artifacts |
+| **Kubernetes** | >10 machines / >15 services / dedicated platform engineering staff / genuine need for frequent elastic autoscaling | Single-machine systemd + this deployment pipeline |
 
-> Read the K8s row's fine print: the problems it solves (multi-machine orchestration, self-healing, elasticity) **do not exist** for your 3 machines and 2 services, while the problems it introduces (operating the cluster itself, credentials, the network model) start on day one. Let the pain arrive first; the tool second.
+> Read the fine print on the Kubernetes row carefully: the problems Kubernetes is built to solve—multi-node scheduling, cross-machine self-healing, dynamic bin-packing—**do not exist** when you run 2 services on 3 machines. Meanwhile, the problems Kubernetes introduces—cluster upgrades, certificate lifecycles, overlay networking, IAM plumbing—start on day one. Let the pain arrive first; bring in the tool second.
 
 ---
 
 ## Chapter 10: The Scenario Matrix Workbook
 
-The full scenario matrix. ✅=done in the beginner/intermediate books; 🧪=exercise in this chapter (hints included); ⭐=layer-2 items needing real public infrastructure (with the method documented).
+This chapter brings together the complete failure and security scenario matrix across all three books. Legend: ✅ = already verified in the Beginner or Intermediate book; 🧪 = hands-on exercise for this chapter (with hints included); ⭐ = Layer-2 scenarios that require live public infrastructure or real GitHub Actions runners (with verification procedures documented).
 
 ### A: Permissions & Trust
 
-| Scenario | Status / hint |
+| Scenario | Status / exercise hint |
 |---|---|
-| forced-command abuse matrix | ✅ intermediate 3.5 |
-| deploy escalation (edit keys/scripts, read env, sudo off-whitelist) | ✅ intermediate 3.5/4; add: try `sudo -u deploy vi /opt/demo-app/bin/deploy.sh` |
-| malicious build (postinstall privesc / secret exfil) | 🧪 add `"postinstall": "cat /home/deploy/.ssh/id_ed25519"` to package.json → push → check whether the build log leaks the key (it will! → residual risk; fix = CI builds or `pnpm install --ignore-scripts`) |
-| TOCTOU + glob boundaries | ✅ advanced 5.2/5.3 |
-| host-key mismatch must fail the deploy | 🧪 change one character in the GitHub Secret's host key → deploy instantly dies with `REMOTE HOST IDENTIFICATION HAS CHANGED` |
-| no secrets in logs | 🧪 `grep -r PASSWORD /var/log/demo-app/` must come up empty (including failed builds) |
-| the sshd lockout drill | Appendix B |
+| Forced-command abuse matrix | ✅ Intermediate 3.5 |
+| `deploy` privilege escalation attempts (editing keys/scripts, reading `.env`, running non-whitelisted `sudo`) | ✅ Intermediate 3.5 & Ch. 4; bonus check: try running `sudo -u deploy vi /opt/demo-app/bin/deploy.sh` |
+| Malicious build (`postinstall` privilege escalation or secret exfiltration) | 🧪 Add `"postinstall": "cat /home/deploy/.ssh/id_ed25519"` to `package.json` → push → check whether the build log prints the private key (it will! → residual risk; fix = build in CI or pass `pnpm install --ignore-scripts`) |
+| TOCTOU window + `sudoers` glob boundaries | ✅ Advanced 5.2 / 5.3 |
+| Host-key mismatch must abort the deploy immediately | 🧪 Flip one character in the `DEPLOY_KNOWN_HOSTS` GitHub Secret → the next deploy must fail immediately with `REMOTE HOST IDENTIFICATION HAS CHANGED` |
+| No secrets leaked in logs | 🧪 `grep -r PASSWORD /var/log/demo-app/` must return nothing (even after intentionally broken builds) |
+| The `sshd` lockout recovery drill | See Appendix B |
 
 ### B: Provenance, Concurrency, Crash Consistency
 
 | Scenario | Status |
 |---|---|
-| force-pushed SHA refused | ✅ intermediate 3.5 (the all-zeros SHA) |
-| skip-older / idempotency | ✅ intermediate 9.8 |
-| flock + workflow concurrency, divided labor | ✅ intermediate 7.1/9.8 |
-| three rapid pushes, queue behavior | ⭐ real Actions observation: older queued runs get replaced (a CI-status-vs-reality quirk); runner timeout while the server continues (✅ 9.8 already verified) |
-| disconnect mid-deploy, server completes | ✅ intermediate 9.8 |
-| kill -9 at five moments | ✅ advanced 7.1 |
-| full reboot mid-deploy | ✅ advanced 7.2 |
+| Force-pushed (dangling) SHA refused | ✅ Intermediate 3.5 (tested with the all-zeros SHA) |
+| Skip-older-commit / idempotency | ✅ Intermediate 9.8 |
+| Division of labor between server `flock` and workflow `concurrency` | ✅ Intermediate 7.1 / 9.8 |
+| Queueing behavior across three rapid pushes | ⭐ Observe on real GitHub Actions: intermediate queued runs are superseded by the newest push (a UI-vs-reality quirk to understand); runner timeout while the server finishes in the background (✅ verified in Intermediate 9.8) |
+| SSH session disconnects mid-deploy, server still completes | ✅ Intermediate 9.8 |
+| `kill -9` at five pipeline stages | ✅ Advanced 7.1 |
+| Full machine reboot mid-deploy | ✅ Advanced 7.2 |
 
 ### C: Build & Toolchain
 
-Bad builds and toolchain mismatches ✅ (intermediate 9); offline deploy & rollback ✅ (advanced 3.3); build-time load/OOM ✅ (advanced 3.1); disk pressure ✅ (advanced 7.3); malicious postinstall scripts 🧪 (same drill as the malicious-build item in Permissions & Trust).
+Broken builds and lockfile/Node version mismatches ✅ (Intermediate Ch. 9); offline deploy and rollback ✅ (Advanced 3.3); build-time load and OOM behavior ✅ (Advanced 3.1); low-disk preflight refusal ✅ (Advanced 7.3); malicious `postinstall` scripts 🧪 (covered by the malicious-build exercise under Permissions & Trust above).
 
 ### D: Data & Migrations
 
-Backup + restore drill ✅; backup scope & retention ✅ (intermediate 6); failed migration = no switch ✅ (intermediate 9.4); the rollback-safety matrix ✅ (advanced 6.1); big-table locks ✅ (advanced 6.2); concurrent migrators ✅ (intermediate 7.4); migration dry-runs ✅ (advanced 6.3).
+End-to-end backup and restore drill ✅; backup scope and retention policy ✅ (Intermediate Ch. 6); failed migration aborts before traffic switch ✅ (Intermediate 9.4); the rollback-safety matrix ✅ (Advanced 6.1); big-table index locks ✅ (Advanced 6.2); concurrent migration locking ✅ (Intermediate 7.4); migration dry-runs against a scratch DB ✅ (Advanced 6.3).
 
 ### E: Switching, Health, Rollback
 
-Downtime window quantified ✅ (advanced 2.1); false-positive health ✅ (intermediate 9.6); partial unit failure → 🧪 `systemctl stop demo-app-worker` then run healthcheck.sh → expect `unit:demo-app-worker=inactive`; a version that migrates fine but won't boot ✅ (intermediate 9.5); rollback target also unhealthy → 🧪 break both versions (e.g. make the old release depend on a missing runtime.env variable?), confirm the system reports "human needed" rather than success; missing config caught before the switch ✅ (intermediate 9.7); timed rollback ✅ (the runbook's number); deploy freeze ✅ (advanced 7.4).
+Downtime window quantified to the millisecond ✅ (Advanced 2.1); false-positive health checks caught ✅ (Intermediate 9.6); partial systemd unit failure → 🧪 run `systemctl stop demo-app-worker` and then invoke `healthcheck.sh` → verify it fails with `unit:demo-app-worker=inactive`; release migrates cleanly but crashes on boot → automatic rollback ✅ (Intermediate 9.5); rollback target is *also* unhealthy → 🧪 deliberately break both the new and previous releases (for example, by removing a required variable from `runtime.env` that the old release also needs) and confirm the pipeline reports that human intervention is required rather than claiming success; missing configuration caught before switching traffic ✅ (Intermediate 9.7); timed rollback execution ✅ (recorded in your runbook); deploy freeze switch ✅ (Advanced 7.4).
 
 ### F: Bootstrap, Operations, Portability
 
-First-deploy timing from an empty server ✅ (intermediate 2.3 — record your minutes); script drift ✅ (advanced 7.5); reboot recovery ✅ (advanced 7.2); audit/notify/reconcile ✅ (advanced 8); retention policy 🧪 deploy 7 times → `ls releases` shows 5, and the previous version was never deleted; CODEOWNERS + self-check CI ✅ (advanced 8.3).
+Timed first deploy from a bare server ✅ (Intermediate 2.3—record your elapsed minutes); script drift detection ✅ (Advanced 7.5); full recovery after host reboot ✅ (Advanced 7.2); audit logging, failure notifications, and reconciliation ✅ (Advanced Ch. 8); release retention policy 🧪 deploy 7 times in a row → `ls releases` should list 5 directories, and the previously live release must never be pruned; `CODEOWNERS` + deploy-script CI checks ✅ (Advanced 8.3).
 
 ### The hypothesis verdicts
 
-| Hypothesis | Verdict | Evidence | Fix |
+| Initial hypothesis | Final verdict | Evidence location | Remediation / hardening |
 |---|---|---|---|
-| TOCTOU (the builder and the runner are different people) | **confirmed** | advanced 5.2 | post-build privilege drop to root read-only / CI builds |
-| backup scope & retention | **confirmed** | intermediate 6 | DB+storage; count+time retention |
-| false-positive health | **confirmed** | intermediate 9.6 | assert SHA + heartbeat + soak |
-| restart window | **confirmed** | advanced 2.1 | blue-green (2.2) |
-| concurrency/timeout behavior | **partially confirmed** | ⭐ the three-rapid-pushes drill (above) / intermediate 9.8 | setsid detachment + honest reporting of state divergence |
-| missing config found too late | **confirmed → fixed** | intermediate 9.7 | check-config preflight |
-| build-on-prod costs | **confirmed** | advanced 3.1/3.3 | the build-location decision table (Chapter 9) |
-| rollback impossible via redeploy | **confirmed → fixed** | intermediate 7.2 | rollback.sh |
-| missing logs/audit/switch | **confirmed → fixed** | intermediate 7.6/10 | audit.log, log rotation, freeze |
-| SSH exposure | **confirmed** | advanced 4.1 | fail2ban / short-lived certificates / pull-based deploys |
-| script drift undetected | **confirmed → fixed** | advanced 7.5 | fingerprint reconciliation |
+| TOCTOU (builder and runner are separate users) | **Confirmed** | Advanced 5.2 | Drop write access (`chown root` read-only) right after build, or build in CI |
+| Naive backup scope and retention gaps | **Confirmed** | Intermediate Ch. 6 | Back up both DB and storage; combine count-based and age-based retention |
+| Naive health checks produce false positives | **Confirmed** | Intermediate 9.6 | Assert live Git SHA + worker heartbeat freshness + soak window |
+| `systemctl restart` leaves a downtime window | **Confirmed** | Advanced 2.1 | Dual-slot blue-green switching (Advanced 2.2) |
+| CI concurrency and runner timeout edge cases | **Partially confirmed** | ⭐ Three-rapid-pushes drill / Intermediate 9.8 | Detach with `setsid` + document where CI status can diverge from server state |
+| Missing config discovered only after switching traffic | **Confirmed → Fixed** | Intermediate 9.7 | Pre-switch `check-config` validation |
+| Building on production degrades live traffic | **Confirmed** | Advanced 3.1 / 3.3 | Follow the build-location decision table (Chapter 9) |
+| Cannot roll back quickly by re-running a full deploy | **Confirmed → Fixed** | Intermediate 7.2 | Dedicated `rollback.sh` script |
+| Missing logs, audit trail, and emergency kill switch | **Confirmed → Fixed** | Intermediate 7.6 & Ch. 10 | `audit.log`, log rotation, and `/opt/demo-app/freeze` |
+| Inbound SSH exposure attracts constant attacks | **Confirmed** | Advanced 4.1 | `fail2ban` / short-lived certificates / pull-based deployment |
+| Drift between repo scripts and `/opt` goes unnoticed | **Confirmed → Fixed** | Advanced 7.5 | Checksum reconciliation (`reconcile.sh`) |
 
 ---
 
 ## Chapter 11: The Portability Proof — a Second Stack (Go)
 
-> Goal: prove the template is **actually** portable, not merely claimed portable (one of this course's success criteria). 30 minutes.
+> **Goal**: Prove with working code that this deployment architecture is **genuinely** language-agnostic rather than merely claiming to be (one of this course's core success criteria). Time required: ~30 minutes.
 
-**[local]** `# file: ~/Projects/demo-go/main.go` (40 lines, zero dependencies):
+**[local]** `# file: ~/Projects/demo-go/main.go` (40 lines, zero external dependencies):
 
 ```go
 package main
@@ -709,24 +709,24 @@ func main() {
 }
 ```
 
-The adaptation diff (this is everything):
+The complete adaptation diff (nothing else changes):
 
-| File | Change | Lines |
+| File | Required change | Lines changed |
 |---|---|---|
-| `deploy/app.conf` | `BUILD_CMD="go build -ldflags \"-X main.version=$GIT_SHA\" -o dist/app ."`; `MIGRATE_CMD="true"`; units/health URLs | ~5 |
-| `deploy/demo-go-web.service` | `ExecStart=/srv/demo-app/current/dist/app` (the worker unit is demo-app-specific and simply goes away) | 1 |
-| `deploy/demo-app.sudoers` | unit names | ~6 |
-| `deploy/check-config.sh` | `node ... --check-config` → `./dist/app --check-config` | 1 |
-| `deploy/migrate-wrapper.sh` | same (or just `exit 0`) | 1 |
-| systemd units | 2 → 1 | — |
+| `deploy/app.conf` | Set `BUILD_CMD="go build -ldflags \"-X main.version=$GIT_SHA\" -o dist/app ."` and `MIGRATE_CMD="true"`; update unit names and health URLs | ~5 |
+| `deploy/demo-go-web.service` | Set `ExecStart=/srv/demo-app/current/dist/app` (drop the worker unit, which was specific to `demo-app`) | 1 |
+| `deploy/demo-app.sudoers` | Update the whitelisted systemd unit names | ~6 |
+| `deploy/check-config.sh` | Change `node ... --check-config` to `./dist/app --check-config` | 1 |
+| `deploy/migrate-wrapper.sh` | Same (or simply `exit 0` for a stateless service) | 1 |
+| systemd units | Reduce from 2 units to 1 | — |
 
-**Total: ~15 changed lines across 6 files.** `install.sh`, `deploy-entry`, `deploy.sh`, `healthcheck.sh` (one heartbeat line commented out — no worker to watch), `rollback.sh`, `backup.sh`, and the workflow: unchanged. Copy this table into `docs/experiments.md` — that is what "portable" looks like as evidence.
+**Total diff: ~15 changed lines across 6 files.** Meanwhile, `install.sh`, `deploy-entry`, `deploy.sh`, `healthcheck.sh` (with the single worker-heartbeat line commented out), `rollback.sh`, `backup.sh`, and the GitHub Actions workflow all carry over untouched. Copy this table into `docs/experiments.md`—that is concrete proof of a portable deployment architecture.
 
 ---
 
 ## Appendix A: The One-Page Runbook (Final)
 
-Extends the intermediate runbook:
+Add these advanced operational procedures to your Intermediate runbook:
 
 ```text
 ═══ Zero-downtime switch (blue-green) ══════════════════════
@@ -748,7 +748,7 @@ Provider console VNC → mount/fix → restore sshd_config → sshd -t → reloa
 
 ## Appendix B: The Lockout Drill
 
-**On your lab machine**, deliberately break sshd and practice recovery (once drilled, panic never):
+**On your lab machine**, deliberately break `sshd` and practice recovering out-of-band (rehearse it once in calm weather so you never panic during an outage):
 
 ```bash
 sudo cp /etc/ssh/sshd_config /tmp/sshd_config.bak
@@ -759,22 +759,22 @@ sudo sshd -t && sudo systemctl restart ssh     # syntactically "valid" — but 2
 #   sudo cp /tmp/sshd_config.bak /etc/ssh/sshd_config && sudo sshd -t && sudo systemctl restart ssh
 ```
 
-**The standing rule**: for any sshd/sudoers/ufw change, follow the five steps — back up first → `sshd -t` / `visudo -cf` → **reload** (not restart) → keep the existing session open → verify with a **new** session. Those five steps are the whole don't-lock-yourself-out playbook.
+**The standing rule**: Whenever you touch `sshd`, `sudoers`, or `ufw`, follow the five-step anti-lockout sequence without exception: **back up the file first → validate syntax with `sshd -t` or `visudo -cf` → `reload` (never `restart`) → keep your existing SSH session open → verify access in a brand-new terminal session**. Those five steps are the entire "never lock yourself out of a server" playbook.
 
 ## Appendix C: The "Layer 2 Unverified" List
 
-This course verified almost everything on a real VPS + real Actions. These items depend on specific conditions; methods documented:
+Nearly every mechanism in this course has been verified end-to-end on a live VPS wired to GitHub Actions. The four items below depend on external conditions or multi-node setups; use the documented methods to verify them in your own environment:
 
-| Item | Why unverified | How to verify |
+| Item | Why it isn't verified by default | How to verify |
 |---|---|---|
-| The exact queue-replacement behavior of concurrent deploys | needs consecutive real Actions runs | push 3 commits rapidly; watch the Actions list |
-| multi-machine blue-green / rolling | single machine | repeat the slot experiment on machine #2 |
-| fully automated short-lived-cert issuance | needs a CA-key custody design | store the CA in Actions secrets, or use OIDC |
-| WAL archiving with RPO=1h | needs archive storage | postgres `archive_command` + object storage |
+| Exact queue-replacement behavior across concurrent deploys | Requires consecutive live GitHub Actions runs | Push 3 commits in rapid succession and watch the Actions tab |
+| Multi-machine blue-green / rolling deploys | The standard lab uses a single machine | Spin up a second lab VPS and repeat the slot experiment across both hosts |
+| Fully automated short-lived certificate issuance in CI | Requires a production CA private-key custody setup | Store a dedicated CA key in Actions Secrets or integrate cloud OIDC |
+| Continuous WAL archiving with RPO = 1h | Requires an external object-storage bucket | Configure Postgres `archive_command` to ship WAL segments to S3/R2 |
 
 ### Simulating CI → SSH deploys on a local VM (closes the loop from Beginner Appendix B)
 
-Play the GitHub Actions runner from your host machine (differences from the real thing: no CI conclusion gate (`needs: check`), and the queueing/cancel behavior can't be reproduced):
+If you are running the course inside a local VM, you can play the role of the GitHub Actions runner directly from your host machine (the only differences from real GitHub Actions: there is no `needs: check` gating job, and cloud queue/cancel behavior cannot be reproduced locally):
 
 ```bash
 # pin the host key (this stands in for DEPLOY_KNOWN_HOSTS in the real chain)
@@ -788,7 +788,7 @@ ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/demo_vm_known_host
 
 ## Wrapping Up: Cleanup and Cost Checklist
 
-Finish the experiments by cleaning the battlefield (and tallying the true cost of the course):
+Once you have finished your experiments, clean up the lab environment (and tally up the true cost of the course):
 
 ```bash
 # server side: freeze switches and timers vanish with the machine — nothing to clean separately
@@ -799,8 +799,8 @@ rm ~/.ssh/demo_deploy_key ~/.ssh/demo_deploy_key.pub
 # machines: destroy the hourly-billed lab box NOW; snapshot the teaching VPS (optional), then destroy it
 ```
 
-Cost reference: the lab box (1C1G, hourly) usually totals **<$1**; the teaching VPS (monthly) + domain ≈ **$5–10**. Pull a copy of `audit.log` and `docs/experiments.md` into the repo — that's your graduation certificate.
+**Cost summary**: The hourly-billed lab box (1 vCPU, 1GB RAM) typically costs **<$1** for the entire book; the monthly teaching VPS plus a domain name runs around **$5–10**. Before destroying your servers, pull a copy of `audit.log` and your completed `docs/experiments.md` into your repository—together, they are your graduation certificate from this course.
 
 ---
 
-*Congratulations on finishing the course. Further reading: the Amazon Builders' Library (deployment & rollback chapters), the 12-Factor App, and Google SRE Book Chapter 8 (Release Engineering). They will keep confirming, at scale, what you touched with your own hands in these three books.*
+*Congratulations on finishing the course! For your next reading list, pick up the Amazon Builders' Library (especially the articles on deployments and rollbacks), The Twelve-Factor App, and Chapter 8 of the Google SRE Book (Release Engineering). Page after page, you will recognize at massive scale the exact principles you just built and tested with your own hands.*

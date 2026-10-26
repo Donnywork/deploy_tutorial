@@ -1,56 +1,56 @@
 # English Tutorials — Index
 
-A fully hands-on deployment course. No ops experience required — but every command comes with the "why".
+A fully hands-on course in modern application deployment. No prior operations experience is required—and every single command comes with the "why" behind it.
 
 ## Learning Path
 
 ```
 Beginner: one server, one domain, one HTTPS URL
-      │  "I have a working Node app — how do I put it on the internet?"
+      │  "I have a working Node app—how do I put it safely on the public internet?"
       ▼
 Intermediate: push-to-deploy, automatic rollback
-      │  "My manual deploy.sh is slow and error-prone — how do I automate it safely?"
+      │  "My manual deploy.sh is slow and error-prone—how do I automate releases safely?"
       ▼
-Advanced: experiments, measurements, and upgrade decisions
-         "Now that we're scaling: zero downtime? Builds off the prod box? Stolen credentials?"
+Advanced: experiments, measurements, and architecture trade-offs
+         "Now that we're scaling: zero downtime? Builds off the prod box? Short-lived credentials?"
 ```
 
 ## The Three Books
 
-| Book | File | You will build | You will understand |
+| Book | File | What you will build | What you will master |
 |---|---|---|---|
-| Beginner | [01-beginner.md](01-beginner.md) | A hardened VPS: systemd service, Nginx reverse proxy, HTTPS, daily backups + a restore drill, a naive deploy script | SSH & keys, firewalls, systemd, reverse proxies, DNS/TLS, "an untested backup is no backup" |
-| Intermediate | [02-intermediate.md](02-intermediate.md) | A full deploy pipeline: GitHub Actions → SSH forced command → atomic switch → health checks → auto-rollback | Least privilege, atomicity, release/rollback as first-class citizens, health checks that assert versions |
-| Advanced | [03-advanced.md](03-advanced.md) | Blue-green switching, CI-built artifacts, a pull-based prototype, short-lived SSH certs, measured RPO/RTO | When reliability investments are worth it — and when they are not |
+| Beginner | [01-beginner.md](01-beginner.md) | A hardened VPS: systemd service management, Nginx reverse proxy, automated HTTPS, daily backups with a live restore drill, and a baseline deploy script | SSH keys & hardening, host firewalls, systemd unit lifecycle, reverse proxies, DNS/TLS fundamentals, and why "an untested backup is no backup" |
+| Intermediate | [02-intermediate.md](02-intermediate.md) | A production-grade deployment pipeline: GitHub Actions → SSH forced command → atomic symlink switch → deep health checks → automatic rollback | Least-privilege user separation, atomic releases, treating rollback as a first-class citizen, and version-asserting health checks |
+| Advanced | [03-advanced.md](03-advanced.md) | Blue-green zero-downtime switching, CI-built artifacts, a pull-based deployment prototype, short-lived SSH certificates, and measured RPO/RTO disaster recovery | How to quantify reliability investments with real measurements—knowing when an architectural upgrade is worth the complexity, and when it is not |
 
-## Conventions
+## Course Conventions
 
-- **[local]** / **[server]**: every command is tagged with where it runs. Server commands assume you are SSH'd in as your day-to-day user (called `sam` in the course); `sudo` is written explicitly where root is needed.
-- If a code block starts with `# file: path`, it is the full content of a file to create/edit.
-- ✅ **Checkpoint**: end-of-chapter self-tests. Pass them all before moving on.
-- 🧪 **Try it**: hands-on experiments — the tutorial shows you exactly what you should observe.
-- ⚠️ **Warning**: operations that can lock you out of your own server (yes, really).
-- Each book opens with a "prerequisites" list (money, time, accounts).
+- **[local]** / **[server]**: Every command is explicitly tagged with where it runs. Unless noted otherwise, server commands assume you are logged in over SSH as your day-to-day admin user (`sam` throughout the course), using `sudo` explicitly whenever root privileges are required.
+- When a code block opens with `# file: path`, it represents the complete contents of the file to create or update at that path.
+- ✅ **Checkpoint**: End-of-chapter verification checklists. Make sure every item passes before moving on to the next chapter.
+- 🧪 **Try it**: Hands-on experiments and failure drills. The text tells you exactly what behavior and output you should observe.
+- ⚠️ **Warning**: High-risk operations capable of locking you out of your own server if run carelessly. Follow the safety steps closely.
+- Every book opens with a clear **prerequisites checklist** covering budget, time commitment, and required accounts.
 
-## Stuck? Just Ask an AI
+## Stuck? Ask an AI Teaching Assistant
 
-This repository is **AI-ready**: open its root in any repo-aware AI assistant (Claude Code, Cursor, Copilot...), and ask questions in plain language. The assistant protocol (in `AGENTS.md`) guarantees it will:
+This repository is **AI-ready** out of the box. Open the repository root in any context-aware AI coding assistant (Claude Code, Cursor, GitHub Copilot, etc.) and ask questions in plain English. The teaching assistant protocol defined in `AGENTS.md` ensures the AI will:
 
-1. **Locate you first** (which book, which chapter — one question, never an interrogation);
-2. **Guide one step at a time** — every command tagged with where it runs and its expected output; it waits for your result before continuing;
-3. **Never spoil** future stages — for out-of-scope questions it gives the one-sentence version plus where it will be taught properly;
-4. **Route errors through the troubleshooting DB** (`ai/troubleshooting.md`, T-01~T-32), following its diagnostic order while teaching you the method;
-5. Never ask for real secrets, and confirm you're on a lab machine before anything destructive.
+1. **Locate your stage first**: Identify which book and chapter you are working on (asking at most one brief clarifying question if it cannot infer your position);
+2. **Move one step at a time**: Give you a single command per turn—complete with its execution target (`[local]` or `[server]`) and expected output—and wait for your result before continuing;
+3. **Never spoil future chapters**: Answer out-of-scope questions with a concise one-sentence summary and a pointer to the exact chapter where the topic is formally covered;
+4. **Diagnose errors systematically**: Route errors through the built-in troubleshooting knowledge base (`ai/troubleshooting.md`, covering cases T-01 through T-32), walking you through the diagnostic method step by step;
+5. **Respect strict safety guardrails**: Never ask for real private keys or production secrets, and always verify you are on a disposable lab machine before suggesting destructive commands.
 
 ## Where Should I Start?
 
-- Never deployed anything → **Beginner, from the top. Don't skip.**
-- Already comfortable with systemd + Nginx + HTTPS, but deploy by hand → take the **prerequisite self-check at the top of Book 02**; if you pass, jump into **Intermediate**.
-- Already have CI/CD, want zero-downtime/credentials/DR improvements → pass that same self-check with ease, then start at **Advanced**.
+- **Never deployed an application to a server before** → Start at **Beginner, Chapter 0**, and work through every chapter in order. Do not skip ahead.
+- **Comfortable with systemd, Nginx, and HTTPS, but still deploying manually** → Run through the **Prerequisite Self-Check at the top of the Intermediate book**. If you can check off every item, jump straight into **Intermediate**.
+- **Already running automated CI/CD, looking to tackle zero-downtime releases, credential hygiene, or disaster recovery** → Verify you pass that same Intermediate self-check effortlessly, then dive straight into **Advanced**.
 
-## FAQ
+## Frequently Asked Questions
 
-- **How much does it cost?** A minimal VPS is ~$4–6/month (destroyable when done); a domain ~$1–10/year. The advanced book's experiments suggest an hourly-billed box you delete afterwards.
-- **The demo app is Node. I use Python/Go/Java — will this help?** The deployment skeleton (users/directories/systemd/switching/health checks/rollback) is language-agnostic. Every book ends with a "port it to your own project" checklist; Advanced Book, Chapter 11 demonstrates a full port to a tiny Go app.
-- **Will this break my own server?** Destructive experiments only ever run on your lab server, with risks flagged. SSH/firewall chapters include a deliberate "lockout drill" so a real lockout never happens to you.
-- **Do I need to memorize any numbering or jargon?** No. Design trade-offs are always stated in plain language ("build once, deploy everywhere", "an untested backup is no backup") with the exact chapter that teaches each one. The course also states its assumptions up front — "backups probably have blind spots", "health checks can lie" — and then confirms or fixes every one of them with experiments; the verdicts are collected in Advanced Book, Chapter 10.
+- **How much will this cost?** An entry-level VPS costs roughly $4–6/month (billed hourly with most cloud providers, so you can destroy it as soon as you finish), and a domain name costs $1–10/year. For the load-testing and comparison labs in the Advanced book, you can spin up a temporary hourly server and delete it right after the lab.
+- **The demo app is written in Node.js, but my stack is Python / Go / Java. Is this course still relevant?** Completely. The deployment architecture you build here—privilege separation, release directory layout, systemd supervision, atomic symlink switching, deep health checks, and instant rollback—is completely language-agnostic. Every book concludes with a "Porting to Your Own Project" checklist, and Advanced Book, Chapter 11 walks through a complete migration using a tiny Go service.
+- **Could I accidentally break my own machine or lock myself out?** Destructive experiments are strictly confined to your disposable lab VPS, with blast radius and recovery steps clearly marked in advance. The SSH and firewall chapters even include a deliberate, guided "lockout drill" so you can practice recovering safely before a real incident ever happens.
+- **Do I need to memorize custom terminology or code numbers?** Not at all. Every architectural trade-off is framed in plain engineering terms ("build once, deploy everywhere", "an untested backup is no backup") alongside the exact chapter where it is proven in practice. Each book also states its architectural assumptions up front—such as "our current backups have blind spots" or "shallow health checks can lie"—and systematically tests and resolves every single one, culminating in a full audit in Advanced Book, Chapter 10.

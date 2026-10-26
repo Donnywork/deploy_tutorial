@@ -1,43 +1,43 @@
 # Beginner: One Server, One Domain, One HTTPS URL
 
-> **What you'll learn**: put a web app you wrote (database included) on a real public server, keep it running 24/7, serve it over a domain with HTTPS, back it up daily (and actually restore it once), and ship updates with a single command.
+> **What you'll learn**: How to take a web application you wrote (database included) and deploy it onto a real public server, keep it running 24/7, serve it over your own domain with HTTPS, back it up automatically every day (and verify that backup with a real restore drill), and ship updates with a single command.
 >
 > **What you need**:
-> - A computer of your own (Windows/Mac/Linux — anything with a terminal)
-> - A payment method: a VPS at ~$4–6/month + a domain at ~$1–10/year
-> - 3–5 hours. Every chapter ends with a checkpoint; pass them all before moving on
+> - A computer of your own (Windows, macOS, or Linux — anything with a terminal)
+> - A payment method: a VPS at ~$4–6/month + a domain name at ~$1–10/year
+> - 3–5 focused hours. Every chapter ends with a checkpoint; make sure every item passes before moving on
 >
-> **What you don't need**: any ops experience. Every concept is explained the first time it appears.
+> **What you don't need**: Any prior operations experience. Every concept is explained in plain English the first time it appears.
 
-**Principles in this book**: an untested backup is no backup; don't lock yourself out; simplicity first. Chapters flag which apply.
+**Principles in this book**: An untested backup is no backup; don't lock yourself out; simplicity first. Chapters flag which principles apply along the way.
 
 **Conventions**:
-- **[local]** = run in a terminal on your own computer; **[server]** = SSH into the server first, then run.
-- The tutorial uses `203.0.113.10` for your server IP, `deploy-demo.example.com` for your domain, and `sam` for your username — **replace all three with your own everywhere**.
-- When a code block starts with `# file: xxx`, it is the full content of a file to create.
+- **[local]** means run the command in a terminal on your own computer; **[server]** means SSH into the server first, then run it there.
+- Throughout this tutorial, `203.0.113.10` stands in for your server IP, `deploy-demo.example.com` for your domain, and `sam` for your daily username — **replace all three with your own values everywhere**.
+- When a code block starts with `# file: xxx`, it shows the complete contents of a file you should create at that path.
 
 ---
 
 ## Chapter 0: Crash Course in Vocabulary (10 minutes)
 
-What stops first-time deployers is usually vocabulary, not commands. One sentence per term:
+What stops first-time deployers is rarely the commands themselves — it's the wall of unfamiliar jargon. Here is every core term you'll meet in this book, explained in one sentence:
 
 | Term | One-sentence explanation |
 |---|---|
-| VPS | A "remote computer" rented from a cloud provider, with a public IP, always on — that's your "server" |
-| SSH | The encrypted way to log into that remote computer and run commands; 90% of deployment is this |
-| Terminal | The "black window" on your machine (Terminal on Mac; Windows Terminal recommended) |
-| Linux user | An account on the server (like `root`, `sam`) — same idea as Windows accounts |
-| systemd | Linux's "service manager": keeps programs running in the background, starts them at boot, restarts them on crash |
-| Service (unit) | One program managed by systemd, e.g. `demo-app.service` |
-| Port | One of 65,535 numbered "sockets" on the server. This book uses 22 (SSH), 80 (HTTP), 443 (HTTPS), 3000 (app) |
-| Nginx | A "reverse proxy": stands in front of your app, handles TLS certificates and forwards requests |
-| DNS / A record | The "phone book" that points `deploy-demo.example.com` at IP `203.0.113.10` |
-| TLS / HTTPS | The "padlock" on websites. Certificates are free from Let's Encrypt and auto-renew |
-| Environment variables | Configuration your program reads at runtime (like the DB password), kept in a `.env` file that **never enters git** |
-| Database migration | A versioned script that changes table schemas; committed with code, executed at deploy time |
+| VPS | A virtual "remote computer" rented from a cloud provider, equipped with a public IP and left running 24/7 — that's your "server" |
+| SSH | The encrypted protocol used to log into a remote server and run commands; 90% of deployment work happens over SSH |
+| Terminal | The command-line window on your computer (Terminal on macOS; Windows Terminal recommended on Windows) |
+| Linux user | An account on the server (such as `root` or `sam`) — the exact same idea as user accounts on your personal computer |
+| systemd | Linux's built-in service manager: it keeps programs running in the background, starts them at boot, and restarts them if they crash |
+| Service (unit) | A single background program managed by systemd, defined in a unit file like `demo-app.service` |
+| Port | One of 65,535 numbered communication "sockets" on a server. This book uses 22 (SSH), 80 (HTTP), 443 (HTTPS), and 3000 (app) |
+| Nginx | A "reverse proxy" that stands in front of your app, terminates TLS certificates, and forwards incoming requests |
+| DNS / A record | The internet's phone book; an A record maps a domain like `deploy-demo.example.com` to an IP address like `203.0.113.10` |
+| TLS / HTTPS | The cryptographic "padlock" on websites. Certificates are issued for free by Let's Encrypt and renew automatically |
+| Environment variables | Runtime configuration your program reads from its environment (such as a database password), stored in a `.env` file that **never enters git** |
+| Database migration | A versioned script that alters database table schemas; committed alongside code and executed automatically at deploy time |
 
-Come back to this table whenever a word feels fuzzy.
+Flip back to this table whenever a term in later chapters feels fuzzy.
 
 ---
 
@@ -45,35 +45,35 @@ Come back to this table whenever a word feels fuzzy.
 
 ### 1.1 Buy a VPS
 
-Any provider works: Hetzner, DigitalOcean, Vultr, Tencent Cloud Lightweight, Alibaba Cloud ECS. Choose:
+Any reputable cloud provider works well: Hetzner, DigitalOcean, Vultr, Tencent Cloud Lighthouse, or Alibaba Cloud ECS. When creating your instance, pick:
 
-- **OS**: Ubuntu 24.04 LTS (every command in this course assumes it)
-- **Size**: the smallest tier is fine (1 vCPU / 1GB RAM runs demo-app; the advanced book's load tests prefer 2GB)
-- **Region**: close to your users
+- **OS**: Ubuntu 24.04 LTS (every command in this course is tested against it)
+- **Size**: The smallest tier is plenty (1 vCPU / 1GB RAM easily runs `demo-app`; if you plan to run the load tests in the advanced book, 2GB is more comfortable)
+- **Region**: Whichever datacenter is closest to you or your users
 
-After checkout you receive: a **public IP** (e.g. `203.0.113.10`) and a root password (some providers use a web console instead).
+Once checkout finishes, you'll be given two essentials: a **public IP** (e.g., `203.0.113.10`) and a `root` password (or a prompt to attach an SSH key in the web console).
 
 ### 1.2 Generate an SSH key and log in for the first time
 
-**[local]** Check whether you already have a key (if so, don't generate another):
+**[local]** First, check whether you already have an Ed25519 SSH key (if you do, there is no need to generate another):
 
 ```bash
 ls ~/.ssh/id_ed25519.pub 2>/dev/null || ssh-keygen -t ed25519 -C "sam@laptop"
 ```
 
-Accept the defaults (empty passphrase is fine for a tutorial; use one on a work machine).
+Press Enter through the prompts to accept the defaults (an empty passphrase is fine for a tutorial environment; on a work laptop, set a strong passphrase).
 
-> **Why**: an SSH key is a pair of files. The private key (`id_ed25519`, your house key — **never share it**) stays on your computer; the public key (`.pub`, the lock) goes to the server. SSH proves "it's me" with key material — passwords can be guessed; modern SSH keys (like ed25519) effectively cannot.
+> **Why SSH keys matter**: An SSH key is a matched pair of files. The **private key** (`id_ed25519`, which acts like your house key — **never share it with anyone**) stays on your laptop; the **public key** (`.pub`, which acts like the lock cylinder) goes onto the server. When you log in, SSH uses cryptographic signatures to prove you hold the private key. Unlike passwords, which can be brute-forced, modern SSH keys like `ed25519` are practically impossible to guess.
 
-Paste the public key into your provider's "SSH keys" box (most providers show it while creating the server), or use the root-password path and configure it after first login.
+Paste the contents of your `.pub` file into your provider's "SSH Keys" field (most cloud consoles ask for it when creating the server), or log in with the initial `root` password and install the key manually in the next step.
 
-**[local]** First login:
+**[local]** Log into your server for the first time:
 
 ```bash
 ssh root@203.0.113.10
 ```
 
-You'll see:
+On your very first connection to a new host, SSH will pause and display:
 
 ```
 The authenticity of host '203.0.113.10' can't be established.
@@ -81,13 +81,13 @@ ED25519 key fingerprint is SHA256:xxxxxxx...
 Are you sure you want to continue connecting (yes/no/[fingerprint])?
 ```
 
-> **What is this**: the server presents its "fingerprint" and asks "memorize it?". This is TOFU (Trust On First Use). The proper move is to compare against the fingerprint shown in your provider's console before typing yes — the intermediate book covers why a **changed** fingerprint must hard-fail a deployment (the deploy channel pins the host key; a mismatch kills the connection). Seed planted.
+> **What this means**: The server is presenting its cryptographic "fingerprint" and asking whether you want to trust and remember it. This model is called TOFU (Trust On First Use). The rigorous habit is to verify that this fingerprint matches the one displayed in your cloud provider's console before typing `yes` — **in the intermediate book, you'll configure automated deployments to hard-fail immediately if a server's fingerprint ever changes** (the deploy channel pins the host key, so any mismatch aborts the connection). Consider that seed planted.
 
-Type `yes`. When the prompt becomes `root@ubuntu:~#`, you're in. **Do not close this window** — it's your lifeline in section 1.4.
+Type `yes` and press Enter. Once your prompt changes to `root@ubuntu:~#`, you are inside the server. **Do not close this terminal window** — while you reconfigure SSH in section 1.4, this active session is your lifeline.
 
 ### 1.3 Baseline updates
 
-**[server]**:
+**[server]** Bring the operating system packages up to date, set your timezone, and enable automatic security patches:
 
 ```bash
 apt update && apt upgrade -y
@@ -95,11 +95,11 @@ timedatectl set-timezone Asia/Shanghai   # your timezone
 apt install -y unattended-upgrades && dpkg-reconfigure -f noninteractive unattended-upgrades
 ```
 
-> `unattended-upgrades` auto-installs security patches. An unattended small server deserves at least this much self-defense.
+> `unattended-upgrades` automatically installs critical security patches in the background. For a small server without a dedicated ops team watching it around the clock, this is the bare minimum of self-defense.
 
 ### 1.4 Create a daily user, disable root login
 
-Working as root all day is dangerous (one slip = a machine-wide incident; least privilege starts with yourself). Create a user `sam`:
+Doing day-to-day work as `root` is asking for trouble: one mistyped command can turn into a machine-wide catastrophe. Practicing least privilege starts with your own login account. Let's create an everyday user named `sam`:
 
 **[server]**:
 
@@ -108,14 +108,14 @@ adduser sam              # set a password, Enter through the rest
 usermod -aG sudo sam     # add sam to the sudo group
 ```
 
-Copy your public key over (assuming 1.2's key reached root):
+Copy your authorized SSH public key over to `sam` (assuming your key from section 1.2 is already in `/root/.ssh/authorized_keys`):
 
 ```bash
 mkdir -p /home/sam/.ssh && cp ~/.ssh/authorized_keys /home/sam/.ssh/ \
   && chown -R sam:sam /home/sam/.ssh && chmod 700 /home/sam/.ssh && chmod 600 /home/sam/.ssh/authorized_keys
 ```
 
-**Open a new terminal** and test (**keep the root window open**):
+Now **open a second terminal window** on your computer to test the new account (**keep your original `root` window open!**):
 
 **[local]**:
 
@@ -124,9 +124,9 @@ ssh sam@203.0.113.10
 sudo whoami             # type sam's password; output "root" → sudo works
 ```
 
-Once sam can log in and sudo, disable root SSH login:
+Once you have confirmed that `sam` can both log in over SSH and elevate privileges with `sudo`, disable direct `root` logins over SSH:
 
-**[server]** (the sam window):
+**[server]** (run this inside the `sam` window):
 
 ```bash
 sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
@@ -134,19 +134,19 @@ sudo sshd -t && echo CONFIG_OK     # syntax check — only proceed on CONFIG_OK!
 sudo systemctl reload ssh
 ```
 
-> ⚠️ **Don't lock yourself out.** These three lines are the classic source of lockout stories worldwide. Three safety nets:
-> 1. `sshd -t` only validates syntax; a failed check means `reload` never runs;
-> 2. `reload` (not `restart`) doesn't kill existing connections — your root window stays alive;
-> 3. While the old window stays connected, test a **new** login. If truly locked out, the provider's web console (VNC) is your out-of-band channel — go find it in the console *now*, so you're not hunting for it during an incident.
+> ⚠️ **Principle: Don't lock yourself out.** Those three lines are the single most common source of server lockout stories worldwide. Notice the three safety nets built into the sequence above:
+> 1. `sshd -t` validates the configuration syntax beforehand; if there is a typo, `reload` never runs.
+> 2. Using `reload` (instead of `restart`) tells the SSH daemon to re-read its config without dropping existing sessions — so your open `root` window stays alive.
+> 3. While keeping the old session open, you always test a **brand-new** login before closing anything. And if you ever do lock yourself out completely, your cloud provider's web-based VNC console is your out-of-band rescue channel — go locate that button in your provider's dashboard *right now*, so you aren't hunting for it in a panic during an incident.
 
 ✅ **Checkpoint**:
-- [ ] `ssh sam@203.0.113.10` works
-- [ ] `ssh root@203.0.113.10` is refused (`Permission denied`)
-- [ ] You know where the provider's VNC/web console lives
+- [ ] `ssh sam@203.0.113.10` logs in cleanly
+- [ ] `ssh root@203.0.113.10` is rejected (`Permission denied`)
+- [ ] You know exactly where your cloud provider's VNC / web console lives
 
 ### 1.5 Firewall (ufw)
 
-**[server]**:
+**[server]** Configure the Uncomplicated Firewall (`ufw`) to allow only SSH and web traffic:
 
 ```bash
 sudo ufw allow OpenSSH     # allow port 22 FIRST!
@@ -166,9 +166,9 @@ To                         Action      From
 443/tcp                    ALLOW       Anywhere
 ```
 
-> Only these three. The app's port 3000 and the database's 5432 are **deliberately not** open to the public — they should only ever be reached by Nginx and the app on the same machine.
+> Expose only these three ports. The application's port `3000` and PostgreSQL's port `5432` are **deliberately kept closed** to the public internet — they should only ever be reached locally by Nginx and the app on the same machine.
 
-✅ **Checkpoint**: `sudo ufw status` shows only 22/80/443; a fresh terminal can still SSH in.
+✅ **Checkpoint**: `sudo ufw status` lists only ports 22, 80, and 443; opening a fresh terminal window can still SSH into the server.
 
 ---
 
@@ -176,7 +176,7 @@ To                         Action      From
 
 ### 2.1 Get the code
 
-The companion app ships in this very repository (the `demo-app/` directory). Copy it into your first own project:
+The companion application for this course lives right inside this repository (under `demo-app/`). Copy it out into a fresh directory to serve as your own project:
 
 **[local]**:
 
@@ -189,9 +189,9 @@ pnpm install               # first install; also generates pnpm-lock.yaml
 git add -A && git commit -m "demo-app v1: web + worker + migrations"
 ```
 
-> **Why commit `pnpm-lock.yaml`**: it pins the exact version of every dependency. On the server, `pnpm install --frozen-lockfile` installs precisely the same versions — otherwise the classic "works on my machine" tragedy strikes (the intermediate book rehearses this in its bad-commit drills).
+> **Why `pnpm-lock.yaml` must be committed**: The lockfile pins the exact version and cryptographic checksum of every dependency in your tree. On the server, running `pnpm install --frozen-lockfile` guarantees that the exact same package versions are installed — preventing the classic "works on my machine, breaks in production" tragedy (which you'll deliberately trigger and debug in the intermediate book's bad-commit drills).
 
-The app looks like this (skim for now; every file is under 50 lines):
+Take a quick look at the project layout (every source file is under 50 lines of code):
 
 ```
 demo-app/
@@ -209,7 +209,7 @@ demo-app/
 
 ### 2.2 Run it locally (optional, strongly recommended)
 
-Requires Docker locally (Docker Desktop / Rancher Desktop). Don't have it? Skip ahead — you can catch up later.
+Running locally requires Docker (Docker Desktop or Rancher Desktop on macOS/Windows). If you don't have Docker installed on your laptop, feel free to skip straight to Chapter 3 and run everything on the server.
 
 **[local]**:
 
@@ -223,20 +223,20 @@ DATABASE_URL="postgres://demo_app:your-password@127.0.0.1:5432/demo_app" \
 APP_ENV=dev STORAGE_DIR=$PWD/storage pnpm run dev
 ```
 
-Expected:
+Expected output:
 
 ```
 demo-app web listening on 127.0.0.1:3000 (version dev)
 ```
 
-Open `http://localhost:3000` in a browser, then in another terminal:
+Open `http://localhost:3000` in your browser, then open another terminal window to hit the readiness endpoint:
 
 ```bash
 curl -s localhost:3000/health/ready
 # {"ok":true,"db":true,"lastPingId":1,"notes":0}
 ```
 
-`"db":true` means it actually wrote to the database. Now the full path (create note → enqueue → worker consumes):
+Seeing `"db":true` confirms that the web process connected to Postgres and completed a real write check. Next, exercise the full asynchronous pipeline (create a note → enqueue a background job → consume it with the worker):
 
 ```bash
 curl -s -X POST localhost:3000/api/notes -H 'content-type: application/json' -d '{"title":"hello"}'
@@ -246,7 +246,7 @@ curl -s localhost:3000/api/jobs/1
 # {"id":"1",...,"status":"done","result":{"shouted":"HELLO","length":5},...}
 ```
 
-With the local run green, the server side won't scare you.
+Once you've seen the pieces work together on your own machine, setting them up on the server will feel straightforward.
 
 ### 2.3 Push to your own GitHub repository
 
@@ -258,7 +258,7 @@ gh repo create demo-app --private --source=. --push    # if you have GitHub CLI
 # git remote add origin git@github.com:yourname/demo-app.git && git push -u origin main
 ```
 
-✅ **Checkpoint**: your private repo on GitHub shows `pnpm-lock.yaml` and all the code; `.env` is **not** there (`.gitignore` keeps it out).
+✅ **Checkpoint**: Your private repository on GitHub contains `pnpm-lock.yaml` and all application source files, while `.env` is **not** present (kept out by `.gitignore`).
 
 ---
 
@@ -275,16 +275,16 @@ sudo usermod -aG docker sam
 docker version
 ```
 
-The repository's `docker-compose.yml` starts a Postgres. Look at the key line:
+The repository's `docker-compose.yml` launches a PostgreSQL container. Pay close attention to how its port mapping is written:
 
 ```yaml
 ports:
   - "127.0.0.1:5432:5432"
 ```
 
-> **Why bind to 127.0.0.1 only**: writing `"5432:5432"` listens on **every** interface — effectively publishing your database to the internet (password or not, it's needless attack surface). With `127.0.0.1:5432:5432`, only the server itself can connect. One of the most common beginner security mistakes.
+> **Why bind to `127.0.0.1` only**: Writing `"5432:5432"` tells Docker to bind port 5432 on **every** network interface (bypassing `ufw` rules in the process) — effectively publishing your database to the entire internet. Even with a password, exposing a database port publicly creates needless attack surface. Prefixing the mapping with `127.0.0.1:` ensures only processes on the server itself can connect. Forgetting that prefix is one of the most common security mistakes beginners make with Docker.
 
-The database password comes from a `.env` file next to the compose file (distinct from the repo's `.env.example`; the server one **never enters git**):
+The database container reads its initial password from a `.env` file alongside `docker-compose.yml` (not to be confused with `.env.example` in git; the server's `.env` **never enters git**). First, prepare the application directory under `/srv`:
 
 ```bash
 cd /srv
@@ -304,17 +304,17 @@ sudo npm install -g pnpm@11
 pnpm -v
 ```
 
-> The repo carries a `.node-version` file saying `24.22.1`. The intermediate book's deploy script checks "server's Node major == the major declared in the repo" — version drift is the other big source of "works locally, breaks in prod" (the intermediate book's bad-commit drills include a wrong-Node-version rehearsal). Also note: on 2026-10-21 Node.js fixed 10 CVEs (including an RCE-capable Brotli decoder flaw) — **always pin to a version that carries the latest security patches** (that release was 22.23.4 for the 22 line; this course uses the Active LTS 24.22.1).
+> Notice the `.node-version` file in the repository root, which specifies `24.22.1`. In the intermediate book, the deployment script verifies that the server's Node major version matches what the repository declares — runtime version drift is another classic culprit behind "works locally, breaks in prod" (and you'll rehearse a Node version mismatch in the intermediate bad-commit drills). Also note: on 2026-10-21, Node.js patched 10 CVEs (including an RCE-capable flaw in the Brotli decoder) — **always pin your runtime to a release that includes the latest security patches** (`22.23.4` for the 22.x line; this course uses the Active LTS release `24.22.1`).
 
 ### 3.3 A dedicated user for the app, and getting the code
 
-Don't run the app as sam, and definitely not as root. Create a dedicated `app` user (least privilege: if the app is compromised, the attacker gets exactly this unprivileged identity):
+Never run a web application as `root`, and don't run it as your sudo-capable `sam` user either. Instead, create a dedicated, unprivileged `app` system user — that way, if the application is ever compromised, an attacker inherits only this locked-down identity:
 
 ```bash
 sudo useradd --system --create-home --shell /bin/bash app
 ```
 
-Give it a **read-only** GitHub deploy key (can pull, cannot push — bounded loss if leaked):
+Next, generate a **read-only** GitHub deploy key for the `app` user (it can pull code from your repository, but cannot push — bounding the blast radius if the key is ever leaked):
 
 ```bash
 sudo -u app mkdir -p /home/app/.ssh
@@ -324,9 +324,9 @@ sudo -u app cat /home/app/.ssh/id_ed25519.pub
 sudo -u app ssh-keyscan -t ed25519 github.com >> /tmp/kh && sudo -u app tee -a /home/app/.ssh/known_hosts < /tmp/kh >/dev/null
 ```
 
-> `ssh-keyscan` pre-records GitHub's host key, so the upcoming `git clone` won't block on the "trust this fingerprint?" interactive prompt.
+> `ssh-keyscan` pre-populates GitHub's host key into `/home/app/.ssh/known_hosts`, ensuring that non-interactive `git clone` and `git pull` commands won't hang waiting for someone to type `yes` at a fingerprint prompt.
 
-Clone the code (note that `app` owns `/srv/demo-app`):
+Now hand ownership of `/srv/demo-app` to `app`, clone the repository, install dependencies, and run the initial build:
 
 ```bash
 sudo chown -R app:app /srv/demo-app
@@ -336,9 +336,9 @@ sudo -u app bash -c 'cd /srv/demo-app && pnpm install --frozen-lockfile && pnpm 
 
 ### 3.4 Config files and the database
 
-Two files (same idea as the local ones in 2.2, with server paths):
+Now create the two server-side configuration files (mirroring what you used locally in section 2.2, but locked down with production ownership and permissions).
 
-**[server]** `# file: /srv/demo-app/.env` (the compose database password):
+**[server]** `# file: /srv/demo-app/.env` (holds the database password read by Docker Compose):
 
 ```bash
 cd /srv/demo-app
@@ -346,7 +346,7 @@ sudo -u app bash -c 'umask 077 && echo "POSTGRES_PASSWORD=$(openssl rand -hex 16
 sudo -u app grep -c PASSWORD .env    # outputs 1 — it's there (don't cat it; fewer eyes on secrets)
 ```
 
-Start the database:
+Start the Postgres container and verify it is healthy:
 
 ```bash
 sudo docker compose up -d db     # note: the app user is NOT in the docker group — plain sudo
@@ -356,7 +356,7 @@ docker exec demo-app-db pg_isready -U demo_app
 # accepting connections
 ```
 
-**[server]** `# file: /srv/demo-app/runtime.env` (app config, for systemd):
+**[server]** `# file: /srv/demo-app/runtime.env` (application runtime environment variables, read by systemd):
 
 ```bash
 PW=$(sudo -u app sed -n 's/^POSTGRES_PASSWORD=//p' .env)
@@ -369,9 +369,9 @@ EOF"
 sudo chown root:app /srv/demo-app/runtime.env && sudo chmod 0640 /srv/demo-app/runtime.env
 ```
 
-> **Why root-owned, mode 0640**: this file holds the DB password. `root:app 0640` means "root reads/writes, the app group reads, nobody else" — the app (running as `app`) can read it, while you, sam, cannot. The intermediate book makes "even the deploy user can't read it" a verifiable fact.
+> **Why `root:app` ownership with mode `0640`**: This file contains your production database password. Setting `root:app` and `0640` means `root` can read and write it, members of the `app` group can read it, and no other user on the system can touch it. The application process (running as `app`) can read its configuration, while your everyday `sam` account cannot casually inspect it without `sudo`. In the intermediate book, we'll take this one step further and prove that even the dedicated `deploy` user cannot read `runtime.env`.
 
-Create the schema:
+Run the database migrations to initialize the schema:
 
 ```bash
 sudo -u app bash -c 'cd /srv/demo-app && set -a && . ./runtime.env && pnpm run migrate'
@@ -382,12 +382,14 @@ sudo -u app bash -c 'cd /srv/demo-app && set -a && . ./runtime.env && pnpm run m
 
 ### 3.5 Run it by hand, then watch it "die"
 
+Start the application manually in the foreground:
+
 ```bash
 sudo -u app bash -c 'cd /srv/demo-app && set -a && . ./runtime.env && node dist/server.js'
 # demo-app web listening on 127.0.0.1:3000 (version dev)
 ```
 
-Verify from another window, then press `Ctrl-C` in the first:
+From a second terminal window on the server, verify that it responds — then press `Ctrl-C` in the first window:
 
 ```bash
 curl -s localhost:3000/version
@@ -395,13 +397,13 @@ curl -s localhost:3000/version
 # after Ctrl-C: curl: (7) Failed to connect
 ```
 
-**That's this chapter's core problem**: the process lives and dies with your terminal. `nohup`, `&`, and `tmux` are band-aids — the next chapter solves it properly with systemd.
+**That right there is the central problem of this chapter**: a foreground process lives and dies with your terminal session. If your Wi-Fi drops or you close your laptop, your site goes down. Hacks like `nohup`, backgrounding with `&`, or running inside `tmux` are fragile band-aids — in the next chapter, we solve process supervision properly with `systemd`.
 
 ✅ **Checkpoint**:
-- [ ] `docker ps` shows `demo-app-db` healthy
-- [ ] `sudo -u app` runs `dist/server.js`; `curl /health/ready` says `"db":true`
-- [ ] `/srv/demo-app/runtime.env` shows permissions `-rw-r-----  root app`
-- [ ] ufw still only allows 22/80/443
+- [ ] `docker ps` shows `demo-app-db` as `healthy`
+- [ ] Running `dist/server.js` via `sudo -u app` works, and `curl localhost:3000/health/ready` returns `"db":true`
+- [ ] `/srv/demo-app/runtime.env` has permissions `-rw-r-----  root app`
+- [ ] `ufw` still allows only ports 22, 80, and 443
 
 ---
 
@@ -409,7 +411,7 @@ curl -s localhost:3000/version
 
 ### 4.1 Write a service unit
 
-**[server]** create `# file: /etc/systemd/system/demo-app.service`:
+**[server]** Create `# file: /etc/systemd/system/demo-app.service`:
 
 ```ini
 [Unit]
@@ -430,18 +432,18 @@ RestartSec=2
 WantedBy=multi-user.target
 ```
 
-Read it line by line (writing your own service later is just editing these lines):
+Take a moment to read through each directive (when you write a systemd unit for your own projects later, these are the exact lines you'll customize):
 
-| Line | Meaning |
+| Directive | What it does |
 |---|---|
-| `Wants=/After=` | Start after network and Docker (the database runs in Docker) |
-| `User=app` | Run as the unprivileged app user, not root (least privilege) |
-| `EnvironmentFile=` | Load these environment variables before starting (that 0640 file) |
-| `ExecStart=` | The command to run — **must be an absolute path** |
-| `Restart=always` | Always restart on crash/OOM |
-| `WantedBy=multi-user.target` | The "start at boot" hook |
+| `Wants=/After=` | Wait until networking is online and the Docker daemon has started (since Postgres runs in Docker) |
+| `User=app` | Run the process as the unprivileged `app` user rather than `root` (least privilege) |
+| `EnvironmentFile=` | Load runtime environment variables from our `0640` config file before launching the process |
+| `ExecStart=` | The exact command to execute — **the binary path must be absolute** |
+| `Restart=always` | Automatically restart the process whenever it exits (whether from an unhandled exception or an OOM kill) |
+| `WantedBy=multi-user.target` | Hook into the standard multi-user runlevel so the service starts automatically on boot |
 
-Enable it:
+Reload systemd, enable the unit at boot, and start it immediately:
 
 ```bash
 sudo systemctl daemon-reload
@@ -449,7 +451,7 @@ sudo systemctl enable --now demo-app
 systemctl status demo-app --no-pager
 ```
 
-Expect `Active: active (running)`. Test the endpoint:
+Look for `Active: active (running)` in the output, then test the readiness endpoint:
 
 ```bash
 curl -s localhost:3000/health/ready && echo
@@ -458,23 +460,23 @@ curl -s localhost:3000/health/ready && echo
 
 ### 4.2 Three proofs that it "always shows up"
 
-**🧪 Experiment 1: kill it**
+**🧪 Experiment 1: Kill the process and watch it self-heal**
 
 ```bash
 sudo kill -9 $(systemctl show -p MainPID --value demo-app)
 sleep 3 && systemctl is-active demo-app    # active — auto-restarted
 ```
 
-**🧪 Experiment 2: logs** (systemd collected stdout/stderr for you):
+**🧪 Experiment 2: Inspect the logs** (systemd automatically captures `stdout` and `stderr` for you):
 
 ```bash
 journalctl -u demo-app -n 20 --no-pager    # last 20 lines
 journalctl -u demo-app -f                  # live tail (Ctrl-C exits, doesn't stop the service)
 ```
 
-> From now on, the first reaction to "why did the app die" is `journalctl -u <service> -n 100`.
+> From this day forward, your first reflex whenever an application misbehaves on a Linux server should be `journalctl -u <service> -n 100`.
 
-**🧪 Experiment 3: reboot the whole machine**
+**🧪 Experiment 3: Reboot the entire machine**
 
 ```bash
 sudo reboot
@@ -483,7 +485,7 @@ curl -s localhost:3000/health/ready && echo
 # {"ok":true,...} — boot-persistence works, and Postgres came back too
 ```
 
-✅ **Checkpoint**: you saw all three results with your own eyes. "Is the app running?" now has a canonical answer: `systemctl is-active demo-app`.
+✅ **Checkpoint**: You have run all three experiments and seen the results firsthand. From now on, the question "is the app running?" has a single canonical answer: `systemctl is-active demo-app`.
 
 ---
 
@@ -491,14 +493,14 @@ curl -s localhost:3000/health/ready && echo
 
 ### 5.1 DNS
 
-In your domain registrar's panel, add an **A record**:
+Log into your domain registrar's DNS dashboard and add an **A record**:
 
 ```
 Host: deploy-demo      (the prefix of deploy-demo.example.com)
 Value: 203.0.113.10
 ```
 
-**[local]** Verify propagation (usually minutes):
+**[local]** Verify that the DNS record resolves to your server's IP (propagation usually takes a few minutes):
 
 ```bash
 dig +short deploy-demo.example.com
@@ -507,7 +509,7 @@ dig +short deploy-demo.example.com
 
 ### 5.2 The Nginx reverse proxy
 
-**[server]**:
+**[server]** Install Nginx and configure a virtual host that proxies traffic to port `3000`:
 
 ```bash
 sudo apt install -y nginx
@@ -530,11 +532,13 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-> **What a reverse proxy does**: the app only listens on `127.0.0.1:3000` (unreachable from the internet); Nginx owns ports 80/443 and forwards to the app. Benefits: certificates live in one place, changing the app port never touches the domain, and if the app dies Nginx can at least return a decent error page.
+> **What a reverse proxy actually does**: Your Node.js process listens exclusively on the loopback interface `127.0.0.1:3000`, completely unreachable from the outside world. Nginx sits in front on public ports 80 and 443, accepts incoming client connections, and forwards them over loopback to your app. This separation gives you three big wins: TLS certificates are managed in one place, changing your app's internal port never affects your public URL, and if the app is briefly down, Nginx can serve a clean error page instead of a raw connection refusal.
 
-Open `http://deploy-demo.example.com` — you should see the demo-app homepage.
+Open `http://deploy-demo.example.com` in your browser — you should see the `demo-app` homepage.
 
 ### 5.3 HTTPS (Let's Encrypt)
+
+Now use Certbot to obtain and install a free Let's Encrypt TLS certificate:
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
@@ -543,7 +547,7 @@ sudo certbot --nginx -d deploy-demo.example.com
 # choose Redirect (force HTTPS)
 ```
 
-`certbot` did three things worth knowing: proved to Let's Encrypt that you control the domain (it verifies via a temporary file served on port 80), rewrote the Nginx config to attach the certificate, and installed an auto-renewal timer. Verify renewal:
+Behind the scenes, `certbot` just performed three important steps: it proved to Let's Encrypt that you control `deploy-demo.example.com` (by serving a temporary challenge token over port 80), rewrote your Nginx configuration to enable TLS and redirect HTTP to HTTPS, and installed a systemd timer to renew the certificate automatically before it expires. Verify the renewal timer and perform a dry run:
 
 ```bash
 sudo certbot renew --dry-run
@@ -551,24 +555,26 @@ sudo certbot renew --dry-run
 sudo systemctl list-timers | grep certbot
 ```
 
+Confirm that HTTPS is live over HTTP/2:
+
 ```bash
 curl -sI https://deploy-demo.example.com | head -3
 # HTTP/2 200 ...
 ```
 
-> No domain? See Appendix A. But in production **HTTPS is not optional**: without it, traffic between your users and the server — including session cookies — is visible and modifiable by any network intermediary.
+> Don't have a domain yet? See Appendix A for workarounds. Just remember that **in production, HTTPS is non-negotiable**: without it, every byte between your users and your server — including passwords and session cookies — travels in cleartext, visible and modifiable by any network intermediary along the path.
 
-✅ **Checkpoint**: `https://deploy-demo.example.com` shows the padlock; plain HTTP 301s to HTTPS.
+✅ **Checkpoint**: Opening `https://deploy-demo.example.com` in a browser displays the security padlock, and `curl -I http://deploy-demo.example.com` returns a `301` redirect to `https://`.
 
 ---
 
 ## Chapter 6: Backups and a Restore Drill (An Untested Backup Is No Backup)
 
-> This chapter comes from a painful principle — an untested backup is no backup: in GitLab's 2017 data-loss incident, **every one** of their backup mechanisms turned out to be broken. So the deliverable here is not "a backup script" but "a backup script I have personally restored from".
+> This chapter is built on a hard-won operational rule: **an untested backup is no backup**. During GitLab's famous 2017 production database outage, the team discovered that **every single one** of their five backup mechanisms was either failing silently or producing unusable files. Accordingly, the deliverable of this chapter is not "a backup script" — it is "**a backup script you have personally used to restore data**."
 
 ### 6.1 Write the backup script
 
-**[server]** `# file: /home/sam/backup-naive.sh` (same content as `deploy/naive/backup-naive.sh` in the repo):
+**[server]** `# file: /home/sam/backup-naive.sh` (identical to `deploy/naive/backup-naive.sh` in the repository):
 
 ```bash
 #!/usr/bin/env bash
@@ -591,9 +597,11 @@ echo "==> latest:"
 ls -lh "$DEST/db" | tail -3
 ```
 
-Two points:
-- `pg_dump --format=custom` produces a compressed binary backup, restored with `pg_restore`, with selective table restore supported;
-- **The backup must include `/srv/demo-app/storage`** (file storage). Backing up only the database is the most classic blind spot of "an untested backup is no backup": the database is pristine while all user-uploaded files are gone.
+Two details in this script are worth calling out:
+- `pg_dump --format=custom` writes a compressed binary archive that is restored with `pg_restore` and even allows restoring individual tables selectively.
+- **The backup must include `/srv/demo-app/storage`** (on-disk file storage). Backing up the database while forgetting user-uploaded files on disk is the most common backup blind spot: when disaster strikes, your database rows come back intact, but every uploaded attachment is gone forever.
+
+Make the script executable and run your first backup:
 
 ```bash
 chmod +x ~/backup-naive.sh && ~/backup-naive.sh
@@ -603,19 +611,21 @@ chmod +x ~/backup-naive.sh && ~/backup-naive.sh
 
 ### 6.2 Run it daily (cron)
 
+Schedule the script to run every night via `cron`:
+
 ```bash
 crontab -e
 # append this line (03:17 server time daily; off the hour to avoid collisions):
 17 3 * * * /home/sam/backup-naive.sh >> /home/sam/backups/backup.log 2>&1
 ```
 
-> crontab's five fields: minute hour day month weekday. Tomorrow morning, `ls ~/backups/demo-app/db` showing a fresh file counts as success.
+> The five time fields in a `crontab` entry represent: minute, hour, day of month, month, and day of week. When you check `ls ~/backups/demo-app/db` tomorrow morning and see a fresh `.dump` file, your scheduled job is working.
 
 ### 6.3 The restore drill (the soul of this chapter)
 
-🧪 **Experiment: pretend disaster struck; restore the database to five minutes ago.**
+🧪 **Experiment: Pretend disaster just struck, and restore the database to the snapshot taken five minutes ago.**
 
-First, make some data:
+First, create a pair of notes — one before the backup, and one after:
 
 ```bash
 curl -s -X POST https://deploy-demo.example.com/api/notes -H 'content-type: application/json' -d '{"title":"before backup"}'
@@ -623,7 +633,7 @@ curl -s -X POST https://deploy-demo.example.com/api/notes -H 'content-type: appl
 curl -s -X POST https://deploy-demo.example.com/api/notes -H 'content-type: application/json' -d '{"title":"after backup (should vanish)"}'
 ```
 
-Start a **temporary** restore database (completely separate from production):
+Now spin up a **temporary** PostgreSQL container dedicated to the restore drill (completely isolated from your live production database):
 
 ```bash
 docker run -d --name restore-drill -e POSTGRES_PASSWORD=drill \
@@ -633,7 +643,7 @@ docker cp ~/backups/demo-app/db/$LATEST restore-drill:/tmp/restore.dump
 time docker exec restore-drill pg_restore -U drill -d drill --no-owner /tmp/restore.dump
 ```
 
-Compare:
+Compare the contents of the restored database against the live database:
 
 ```bash
 docker exec restore-drill psql -U drill -d drill -Atc "SELECT title FROM notes ORDER BY id"
@@ -644,39 +654,39 @@ docker exec demo-app-db psql -U demo_app -d demo_app -Atc "SELECT title FROM not
 docker rm -f restore-drill
 ```
 
-**Two concepts that are now yours** (the advanced book measures them properly):
+**Two fundamental reliability metrics now belong to you** (and you'll measure them rigorously in the advanced book):
 
-- **RPO** (Recovery Point Objective): how much data you can afford to lose. Your current scheme: daily backups → worst case 24 hours.
-- **RTO** (Recovery Time Objective): how long until you're back. The `time` output above is your first-hand RTO datapoint — write it down.
+- **RPO** (Recovery Point Objective): The maximum age of data you can afford to lose when disaster strikes. With a once-daily backup schedule, your worst-case RPO is 24 hours.
+- **RTO** (Recovery Time Objective): How long it takes to restore service after an outage begins. The elapsed time printed by `time` above is your very first empirical RTO measurement — jot it down.
 
 ### 6.4 An off-site copy
 
-Backups on the same machine and disk as the database = one fire takes all. The cheapest off-siteing:
+Keeping backups on the exact same server and disk as your live database means a single hardware or provider failure wipes out both at once. The simplest, zero-cost off-site backup is pulling a copy to your own machine:
 
-**[local]** pull backups to your own computer:
+**[local]** Sync the backup directory down to your computer:
 
 ```bash
 mkdir -p ~/demo-app-backups
 rsync -av sam@203.0.113.10:backups/demo-app/ ~/demo-app-backups/
 ```
 
-Put that in your local cron too (Mac: `crontab -e`; Windows: Task Scheduler running the same command). The next step up (object storage + rclone) is in the advanced book, Chapter 6.
+Schedule that `rsync` command on your local machine as well (via `crontab -e` on macOS/Linux, or Task Scheduler on Windows). We'll cover automated cloud off-site backups using object storage and `rclone` in Chapter 6 of the advanced book.
 
 ✅ **Checkpoint**:
-- [ ] You ran a backup by hand; `~/backups/demo-app/db` contains a `.dump`
-- [ ] You completed a full restore drill and "after backup" indeed did not come back (that absence is the evidence you want)
-- [ ] cron is configured; a copy exists locally
-- [ ] You can answer: what is my RPO?
+- [ ] You ran a manual backup and verified that `~/backups/demo-app/db` contains a `.dump` file
+- [ ] You completed the full restore drill and confirmed that the `"after backup"` row was absent in the restored database (which is the exact proof you want)
+- [ ] `cron` is configured on the server, and an off-site copy sits on your local machine
+- [ ] You can state without hesitation: what is my current RPO?
 
 ---
 
 ## Chapter 7: Your First Pipeline — deploy-v0 and Its Eight Sins
 
-Right now every code change means manually SSH-ing and typing commands. Let's script it — and then honestly face every flaw in that script. They are precisely the intermediate book's table of contents.
+Right now, shipping every code change requires SSH-ing into the server and typing a sequence of commands by hand. Let's wrap those commands into a deployment script — and then take an honest look at every flaw hiding inside it. Those eight flaws form the exact table of contents for the intermediate book.
 
 ### 7.1 The v0 deploy script
 
-**[server]** `# file: /home/sam/deploy-naive.sh` (same as `deploy/naive/deploy-naive.sh`):
+**[server]** `# file: /home/sam/deploy-naive.sh` (identical to `deploy/naive/deploy-naive.sh`):
 
 ```bash
 #!/usr/bin/env bash
@@ -695,13 +705,15 @@ sudo systemctl restart demo-app
 echo "deployed: $(sudo -u app git -C /srv/demo-app rev-parse --short HEAD)"
 ```
 
+Make it executable:
+
 ```bash
 chmod +x ~/deploy-naive.sh
 ```
 
 ### 7.2 Experience the full loop
 
-**[local]** change one line and walk the whole path:
+**[local]** Edit a single line of code, commit, and push to GitHub:
 
 ```bash
 cd ~/Projects/demo-app
@@ -709,20 +721,20 @@ sed -i '' 's/<h1>demo-app<\/h1>/<h1>demo-app v2<\/h1>/' src/server.js   # macOS;
 git commit -am "v2: change title" && git push
 ```
 
-**[server]**:
+**[server]** Trigger your deployment script and verify the updated heading:
 
 ```bash
 ~/deploy-naive.sh && curl -s https://deploy-demo.example.com | grep h1
 # <h1>demo-app v2</h1>
 ```
 
-Congratulations — you have a deployment pipeline! Now, the honest part.
+Congratulations — you have a working deployment pipeline! Now comes the honest reckoning.
 
 ### 7.3 Judgment day: the eight sins
 
-**🧪 Sin #1: the downtime window.** During the script's `systemctl restart`, requests fail. Measure it:
+**🧪 Sin #1: The downtime window.** While `systemctl restart` stops the old process and boots the new one, incoming requests fail. Let's measure that gap firsthand.
 
-**[local]** hammer requests while deploying:
+**[local]** Poll the readiness endpoint every 200ms in a tight loop:
 
 ```bash
 while true; do
@@ -731,9 +743,9 @@ while true; do
 done
 ```
 
-**[server]** run `~/deploy-naive.sh` in another terminal; watch the local output. You'll see some `000 ...s` or `FAIL` lines — that's "the site is down" from the user's perspective. **Note the duration of consecutive failures** (typically hundreds of ms to a few seconds). The intermediate book makes the switch atomic; the advanced book's blue-green experiment squeezes it toward zero.
+**[server]** In another terminal, run `~/deploy-naive.sh` and watch your local output. You'll spot several `000 ...s` or `FAIL` lines — from a user's perspective, the site was unreachable during that window. **Write down how long the consecutive failures lasted** (typically a few hundred milliseconds to a couple of seconds). The intermediate book shrinks this window with an atomic symlink switch, and the advanced book's blue-green deployment experiment drives it down toward zero.
 
-**🧪 Sin #2: building on the production machine.** `pnpm install` + `build` run on the box serving users: they steal CPU/RAM (visibly hurting latency on small machines), and **with no internet there is no deployment**. Try it (your origin is the SSH form, which uses port 22 — block both; your existing SSH session survives, because OUTPUT rules only block *new* outbound connections):
+**🧪 Sin #2: Building on the production machine.** Running `pnpm install` and `pnpm run build` on the same machine that serves live traffic steals CPU and RAM (visibly spiking response latency on small instances), and **if external network access is down, you cannot deploy at all**. Prove it to yourself (note that your Git remote uses SSH over port 22, so we block outbound ports 22 and 443; your current SSH session won't drop because `iptables` `OUTPUT` rules only block *new* outbound connections):
 
 ```bash
 sudo iptables -A OUTPUT -p tcp --dport 22 -j DROP    # git@github.com goes through here
@@ -743,50 +755,50 @@ sudo iptables -D OUTPUT -p tcp --dport 22 -j DROP    # remove both rules when do
 sudo iptables -D OUTPUT -p tcp --dport 443 -j DROP
 ```
 
-**🧪 Sin #3: half-done states.** Suppose `build` fails (push a deliberate syntax error locally): `set -e` stops the script — but notice, if the failure happened *between migrate and restart*, the database already has the new schema while the old code is still running. Nothing broke this time purely by luck.
+**🧪 Sin #3: Half-done states.** Suppose `pnpm run build` fails halfway through (for instance, you pushed a syntax error). Even though `set -e` aborts the script, think about where the server is left: if `dist/` was partially overwritten, or if a failure occurred *between `migrate` and `restart`*, the database now holds the new schema while the old code is still running in memory. If nothing broke today, it was pure luck.
 
-**🧪 Sin #4: no health check.** The script declares victory when it finishes. Did the new version start? Is `/health/ready` green? Nobody knows. In the real world, versions that crash within 30 seconds of restart (OOM, missing env) are everywhere.
+**🧪 Sin #4: No health check.** The script prints `deployed:` and declares victory the moment `systemctl restart` returns. Did the new process actually stay up? Can `/health/ready` still talk to the database? The script has no idea. In real-world operations, deployments that crash within 30 seconds of startup (due to missing environment variables, bad config, or OOM kills) happen all the time.
 
-**🧪 Sin #5: rollback by adrenaline.** New version down? `git reset` + rebuild + restart, all in a panic — and the old version may already be gone. **Rollback should be as convenient as deploy** (the intermediate book ships a one-command `rollback.sh`).
+**🧪 Sin #5: Rollback by adrenaline.** What happens when a new release goes live and immediately starts throwing 500s? Right now, rolling back means frantically SSH-ing in to run `git reset`, rebuilding from scratch, and restarting — all while users are staring at errors and the previous build artifacts have already been overwritten. **Rolling back should be a calm, single-command operation that works even without internet access** (which is exactly what the intermediate book's `rollback.sh` provides).
 
-**🧪 Sin #6: excessive privileges.** The script runs as sam with full sudo. Deploy logic needs exactly: restart one service, run one migration, make one backup. Least privilege says shrink to those.
+**🧪 Sin #6: Excessive privileges.** This script runs as `sam`, an account with unrestricted `sudo` access over the entire machine. Yet deploying an application only requires permission to do three specific things: restart the app services, run migrations, and trigger a backup. Least privilege demands narrowing the deployment channel down to those exact operations.
 
-**🧪 Sin #7: no records.** Who deployed what, when, with what outcome? Today the answer is "grep shell history" — there is no audit trail.
+**🧪 Sin #7: No audit trail.** Who deployed which commit, when, how long did it take, and did it succeed or roll back? Right now, the only way to answer those questions is to archaeology-dig through someone's `.bash_history`.
 
-**🧪 Sin #8: the code/migration skew window.** The order is `migrate → restart`: between migration completing and new code starting, you're running **old code against the new schema**. Additive migrations usually survive; destructive ones kill the old code on the spot — a rollback-safety killer. The correct pattern (expand/contract) is advanced book Chapter 6.
+**🧪 Sin #8: The code/migration skew window.** Because the script runs `migrate` before `restart`, there is a window between the migration finishing and the new process starting where **old application code is running against the new database schema**. Purely additive migrations usually survive this gap, but destructive schema changes (like dropping or renaming a column) will immediately break the running code — and make rolling back impossible. You'll learn the safe two-phase pattern (expand/contract) in Chapter 6 of the advanced book.
 
 ### 7.4 Beginner book wrap-up
 
-You now have a **daily-usable** go-live process — and an honest list of its flaws. The intermediate book turns each sin into an engineering solution:
+You now have a **genuinely usable** deployment workflow for small projects — along with an honest diagnosis of its engineering limits. The intermediate book systematically replaces each of the eight sins with a production-grade mechanism:
 
 | Sin | The intermediate fix |
 |---|---|
-| #1 downtime window | `releases/<sha>` directories + atomic `current` symlink switch |
-| #2 building in prod | kept for now; the advanced book's build-location experiment decides with data |
-| #3 half-done states | build into `.partial`; promote to a release only after everything succeeds |
-| #4 no health check | assert `/version` == target SHA + real DB read/write + worker heartbeat + soak window |
-| #5 rollback by adrenaline | `rollback.sh`: a first-class command, no internet required |
-| #6 excessive privileges | a `deploy` user + SSH forced command + sudoers whitelist |
-| #7 no records | audit.log: one line per operation (who/when/SHA/result/duration) |
-| #8 code/migration skew | a failed migration means no code switch; destructive changes go expand/contract |
+| #1 downtime window | Immutable `releases/<sha>` directories + an atomic `current` symlink switch |
+| #2 building in prod | Kept initially for simplicity; evaluated with empirical data in the advanced book's build-location experiment |
+| #3 half-done states | Build and stage inside a temporary `.partial` directory; promote to a release only after every check passes |
+| #4 no health check | Assert `/version` == target SHA + real DB read/write + worker heartbeat + a post-start soak window |
+| #5 rollback by adrenaline | `rollback.sh`: a first-class, single-command rollback that requires no network access |
+| #6 excessive privileges | A dedicated `deploy` user + SSH forced command + a locked-down `sudoers` whitelist |
+| #7 no audit trail | `audit.log`: one structured line appended per operation (who, when, SHA, outcome, duration) |
+| #8 code/migration skew | Never switch code if a migration fails; handle breaking schema changes via expand/contract |
 
 ✅ **Graduation checkpoint**:
-- [ ] You can say without looking up: what `systemctl status` / `journalctl -u` / `ufw status` are for
-- [ ] You completed a full restore drill and can state your RPO
-- [ ] You measured v0's downtime window yourself and have a number
-- [ ] You can retell each of the eight sins in your own words
+- [ ] You can explain from memory what `systemctl status`, `journalctl -u`, and `ufw status` each do
+- [ ] You have completed a full database restore drill and can state your RPO
+- [ ] You have measured `deploy-naive.sh`'s downtime window yourself and recorded the number
+- [ ] You can explain each of the eight sins in your own words
 
 ---
 
 ## Appendix A: No Domain?
 
-- **IP + HTTP only**: skip the certbot section, set `server_name _;`. Downsides: no padlock, plaintext, cookies exposed. Temporary use only.
-- **sslip.io / nip.io**: `203.0.113.10.sslip.io` resolves to `203.0.113.10` automatically. Great for DNS/certificate practice; shared domains hit Let's Encrypt rate limits — **never for production**.
-- Honest advice: a $2/year domain is the best learning investment available.
+- **Direct IP + HTTP only**: Skip the `certbot` section and set `server_name _;` in your Nginx config. The downsides are significant: no browser padlock, cleartext traffic, and exposed session cookies. Use this only for throwaway testing.
+- **Wildcard DNS services (`sslip.io` / `nip.io`)**: A hostname like `203.0.113.10.sslip.io` automatically resolves to `203.0.113.10` with zero configuration. This is handy for practicing DNS resolution and TLS certificate issuance, but because everyone shares the same parent domain, you can easily hit Let's Encrypt rate limits — **never use it in production**.
+- **Honest advice**: Spending $2/year on a real domain name is the highest-leverage learning investment you can make.
 
 ## Appendix B: Free Local VM Practice
 
-Three Multipass commands for the same Ubuntu:
+If you don't want to rent a cloud VPS yet, three Multipass commands will spin up an identical Ubuntu 24.04 virtual machine on your laptop:
 
 ```bash
 brew install --cask multipass          # or the official installer
@@ -795,33 +807,33 @@ multipass shell lab                    # equivalent to ssh; the rest of the chap
 multipass delete lab && multipass purge  # destroy when done
 ```
 
-Limitations: no real public IP → Chapter 5's HTTPS becomes self-signed practice, and the intermediate book's real GitHub Actions path must be simulated by playing the CI's ssh call from your host machine (method in the advanced book, Appendix C). **Bottom line: learn concepts on a VM; learn the real chain on a real VPS.**
+Limitations: Because a local VM has no public IP address, Chapter 5's HTTPS setup requires a self-signed certificate instead of Let's Encrypt, and the intermediate book's GitHub Actions workflow must be simulated by invoking the CI SSH command from your host machine (covered in Appendix C of the advanced book). **Bottom line: a local VM is great for learning the concepts, but use a real VPS to experience the full end-to-end chain.**
 
 ## Appendix C: Porting to Your Own App
 
-The skeleton is universal. Walk this table per project:
+The deployment skeleton you built in this book is language-agnostic. When adapting it to your own project, walk through this checklist:
 
-| What changes | Where |
+| What changes | Where to update it |
 |---|---|
-| App port (3000) | `PORT` in `runtime.env` + Nginx `proxy_pass` |
-| The "build" command (`pnpm run build`) | anything producing a runnable artifact (`go build`, `mvn package`...) |
-| The database (containerized Postgres) | MySQL/SQLite is a compose-file and connection-string swap; no DB → drop the migrate steps |
-| systemd unit | the `ExecStart` line; Java → `java -jar app.jar`, Python → `.venv/bin/gunicorn ...` |
-| Backup script | `pg_dump` → `mysqldump`/file snapshots; **keep the storage backup** |
-| `/health/ready` | strongly recommended for your app too: check key dependencies + real read/write |
+| Application port (`3000`) | `PORT` in `runtime.env` + `proxy_pass` in your Nginx site config |
+| The "build" step (`pnpm run build`) | Any command that produces a runnable artifact (`go build`, `mvn package`, frontend bundle, etc.) |
+| Database (containerized Postgres) | Swapping to MySQL or SQLite only changes `docker-compose.yml` and `DATABASE_URL`; if your app has no database, drop the `migrate` steps |
+| systemd service unit | Update the `ExecStart=` line (e.g., `/usr/bin/java -jar app.jar` for Java, or `/srv/.../.venv/bin/gunicorn ...` for Python) |
+| Backup script | Replace `pg_dump` with `mysqldump` or a SQLite `.backup` command; **always keep the `storage` directory archive** |
+| `/health/ready` endpoint | Strongly recommended for every app: verify critical dependencies and perform a real database read/write check |
 
 ## Appendix D: Common Errors Quick Reference
 
-| Error | Cause → fix |
+| Error | Cause → Fix |
 |---|---|
-| `Permission denied (publickey)` | key mismatch / wrong user → `ssh -v` shows which keys were tried |
-| `curl: (7) Failed to connect ... port 3000` | app not running → `systemctl status demo-app`, `journalctl -u demo-app -n 50` |
-| `502 Bad Gateway` (Nginx page) | Nginx alive, backend dead → same as above; it's the app 90% of the time |
-| `EADDRINUSE` | port 3000 taken → `sudo ss -ltnp | grep 3000` |
-| `password authentication failed for user "demo_app"` | `.env` password differs from `runtime.env`'s `DATABASE_URL` → align, then recreate (changing the password on an existing volume doesn't take effect; `docker compose down -v` starts fresh, **deleting data**) |
-| `pnpm install` lockfile mismatch | `package.json` changed locally without refreshing the lock → run `pnpm install` locally, commit `pnpm-lock.yaml` |
-| Page still old after deploy | stale build / browser cache → `curl -s yourdomain/version`; hard-refresh |
-| disk full | logs/backups piled up → `df -h`, `journalctl --vacuum-size=200M`, clean `~/backups` |
+| `Permission denied (publickey)` | Local private key doesn't match the server's `authorized_keys`, or you specified the wrong username → run `ssh -v user@ip` to see which keys SSH tried |
+| `curl: (7) Failed to connect ... port 3000` | The application process is not running → check `systemctl status demo-app` and `journalctl -u demo-app -n 50` |
+| `502 Bad Gateway` (Nginx error page) | Nginx is up, but nothing is answering on port 3000 → same commands as above; 90% of the time the app crashed on startup |
+| `EADDRINUSE` | Port 3000 is already occupied by another process → run `sudo ss -ltnp | grep 3000` to find and stop the conflicting PID |
+| `password authentication failed for user "demo_app"` | The password in `.env` does not match `DATABASE_URL` in `runtime.env` → align the two passwords, then recreate the container (note: changing `.env` on an existing volume does not update Postgres's stored password; in a lab environment, `docker compose down -v` resets the volume from scratch, **deleting all database data**) |
+| `pnpm install` lockfile mismatch | `package.json` was edited locally without updating the lockfile → run `pnpm install` locally and commit the updated `pnpm-lock.yaml` |
+| Page still shows old content after deploy | Build step didn't run or the browser cached the response → check `curl -s https://yourdomain/version`, then hard-refresh the browser |
+| `disk full` / `No space left on device` | Logs or old backups filled the disk → inspect usage with `df -h`, trim journal logs with `sudo journalctl --vacuum-size=200M`, and prune `~/backups` |
 
 ---
 

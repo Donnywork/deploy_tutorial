@@ -1,43 +1,43 @@
-# 初级教程:一台服务器、一个域名、一条 HTTPS 网址
+# 初级教程：一台服务器、一个域名、一条 HTTPS 网址
 
-> **你会学到**:把自己写的一个 Web 应用(含数据库)放到一台真实的公网服务器上,让它 7×24 常驻运行、通过域名 + HTTPS 访问、每天自动备份(并且真的恢复过一次),最后用一条命令完成更新部署。
+> **你会学到**：如何把自己编写的 Web 应用（含数据库）部署到一台真实的公网服务器上，让它 7×24 小时常驻运行、通过域名与 HTTPS 安全访问、每天自动执行备份（并亲手完成一次恢复演练），最后用一条命令完成日常更新与部署。
 >
-> **你需要**:
-> - 一台自己的电脑(Windows/Mac/Linux 都行,能开终端)
-> - 一张能网上支付的卡:VPS 约 $4–6/月 + 域名约 $1–10/年
-> - 3–5 小时。每章末尾有检查点,全部通过再往下走
+> **你需要准备**：
+> - 一台自己的电脑（Windows、Mac 或 Linux 均可，能打开终端就行）
+> - 一张支持线上支付的银行卡：租用 VPS 约 $4–6/月，购买域名约 $1–10/年
+> - 3–5 小时专注时间。每章末尾都设有检查点，请确认全部通过后再进入下一章
 >
-> **你不需要**:任何运维经验。所有概念第一次出现时都会解释。
+> **你不需要具备**：任何运维经验。所有陌生概念在第一次出现时都会用大白话讲清楚。
 
-**本册原则**:备份要演练、别把自己锁在门外、简单优先。
+**本册原则**：备份要演练、别把自己锁在门外、简单优先。
 
-**约定**:
-- **【本地】** = 在你自己电脑的终端执行;**【服务器】** = 先 SSH 登录服务器,再执行。
-- 教程用 `203.0.113.10` 代表你的服务器 IP,`deploy-demo.example.com` 代表你的域名,`sam` 代表你的日常用户名 —— **请全程替换成你自己的**。
-- 代码块第一行是 `# 文件: xxx` 的,表示要创建的文件完整内容。
+**约定**：
+- **【本地】**表示在你自己电脑的终端里执行；**【服务器】**表示先通过 SSH 登录到服务器，再在服务器上执行。
+- 教程中统一用 `203.0.113.10` 代表你的服务器公网 IP，用 `deploy-demo.example.com` 代表你的域名，用 `sam` 代表你的日常用户名——**实操时请全程替换成你自己的真实信息**。
+- 如果代码块第一行带有 `# 文件: xxx` 注释，代表这是需要创建的完整文件内容。
 
 ---
 
-## 第 0 章 术语速成班(10 分钟)
+## 第 0 章 术语速成班（10 分钟）
 
-第一次部署,拦住你的往往不是命令,而是名词。每个词一句话:
+第一次部署应用时，拦住你的往往不是复杂的命令，而是满屏陌生的名词。这里用一句话把每个核心概念讲透：
 
 | 术语 | 一句话解释 |
 |---|---|
-| VPS | 云厂商租给你的一台"远程电脑",有公网 IP,24 小时开机,就是你的"服务器" |
-| SSH | 加密地登录到远程电脑执行命令的方式,部署的 90% 都靠它 |
-| 终端(Terminal) | 你电脑上那个"黑窗口",Mac 叫 Terminal,Windows 推荐 Windows Terminal |
-| Linux 用户 | 服务器上的账号(如 `root`、`sam`),和 Windows 的账户一个意思 |
-| systemd | Linux 的"服务管理器":让程序在后台常驻、开机自启、崩了自动拉起 |
-| 服务(unit/service) | 被 systemd 管理的一个程序,如 `demo-app.service` |
-| 端口 | 服务器上 65535 个"插座"编号。本教程会用到 22(SSH)、80(HTTP)、443(HTTPS)、3000(应用) |
-| Nginx | "反向代理":站在你的应用前面,负责 HTTPS 证书和转发请求 |
-| DNS / A 记录 | 把域名 `deploy-demo.example.com` 指到 IP `203.0.113.10` 的那本"电话簿" |
-| TLS / HTTPS | 给网站加的"锁"。证书由 Let's Encrypt 免费签发,自动续期 |
-| 环境变量 | 程序运行时读的配置(如数据库密码),放在 `.env` 文件里,**永远不进 git** |
-| 数据库迁移(migration) | "改表结构"的版本化脚本,和代码一起提交,部署时执行 |
+| VPS | 云厂商租给你的一台“远程电脑”，拥有独立的公网 IP 且 24 小时开机，也就是常说的“服务器” |
+| SSH | 通过加密通道登录远程电脑并执行命令的方式，90% 的部署操作都要靠它完成 |
+| 终端（Terminal） | 你电脑上用来敲命令的“黑窗口”；Mac 自带 Terminal，Windows 推荐使用 Windows Terminal |
+| Linux 用户 | 服务器上的登录账号（如管理员 `root`、日常用户 `sam`），概念上和 Windows 的系统账户完全一样 |
+| systemd | Linux 内置的“服务管理器”：负责让程序在后台常驻、开机自启、崩溃后自动拉起 |
+| 服务（unit/service） | 被 systemd 托管的单个后台程序，配置文件形如 `demo-app.service` |
+| 端口 | 服务器上从 1 到 65535 编号的“通信插座”。本教程会用到 22（SSH）、80（HTTP）、443（HTTPS）和 3000（应用） |
+| Nginx | “反向代理”：站在你的应用前面迎客，负责处理 HTTPS 证书并将请求转发给后端应用 |
+| DNS / A 记录 | 互联网的“电话簿”，负责把域名 `deploy-demo.example.com` 指向服务器 IP `203.0.113.10` |
+| TLS / HTTPS | 给网站通信加上的“安全锁”。证书可由 Let's Encrypt 免费签发并自动续期 |
+| 环境变量 | 程序运行时读取的外部配置（如数据库密码），通常保存在 `.env` 文件里，**永远不进 git** |
+| 数据库迁移（migration） | 用来“修改数据库表结构”的版本化脚本，随代码一起提交，在每次部署时按序执行 |
 
-后文遇到不确定的词,回这张表查。
+读后文时如果遇到拿不准的词，随时翻回这张表对照即可。
 
 ---
 
@@ -45,35 +45,35 @@
 
 ### 1.1 买一台 VPS
 
-任何一家都行:Hetzner、DigitalOcean、Vultr、腾讯云轻量、阿里云 ECS。选择:
+主流云厂商都可以：Hetzner、DigitalOcean、Vultr、腾讯云轻量应用服务器、阿里云 ECS 任选其一即可。选购时按如下规格配置：
 
-- **系统**:Ubuntu 24.04 LTS(本教程所有命令基于它)
-- **配置**:最低配即可(1 核 1GB 内存够 demo-app 用;高级册压测实验建议 2GB)
-- **区域**:离你用户近的
+- **系统**：Ubuntu 24.04 LTS（本教程的所有命令均基于该版本验证）
+- **配置**：选最低配即可（1 核 1GB 内存足够跑通 `demo-app`；如果计划做高级册的压测实验，建议选 2GB）
+- **区域**：挑选离你或你的目标用户最近的机房
 
-付款后你会得到:**公网 IP**(如 `203.0.113.10`)和 root 密码(有些厂商用网页控制台登录)。
+付款创建实例后，你会拿到两个关键信息：**公网 IP**（如 `203.0.113.10`）和 `root` 初始密码（部分厂商默认通过网页控制台或预设密钥登录）。
 
 ### 1.2 生成 SSH 密钥并第一次登录
 
-**【本地】** 检查是否已有密钥(有就别重复生成):
+**【本地】** 先检查本机是否已经有 SSH 密钥（如果已有就别重复生成）：
 
 ```bash
 ls ~/.ssh/id_ed25519.pub 2>/dev/null || ssh-keygen -t ed25519 -C "sam@laptop"
 ```
 
-一路回车(口令可留空,教程阶段这样最省事;工作电脑建议设置口令)。
+出现提示时一路按回车即可（教程练习阶段可将密钥口令留空，这样最省事；若是日常工作电脑，建议设置口令）。
 
-> **为什么**:SSH 密钥 = 一对文件。私钥(`id_ed25519`,相当于家门钥匙,**绝不给任何人**)放你电脑;公钥(`.pub`,相当于锁)放到服务器。登录时 SSH 用密钥证明"我是我",比密码安全得多——密码可以被猜,现代 SSH 密钥(如 ed25519)的强度实际上猜不动。
+> **为什么要用密钥**：SSH 密钥本质上是一对互相匹配的凭证文件。其中**私钥**（`id_ed25519`）相当于你家大门的钥匙，保存在你自己的电脑上，**绝不给任何人**；**公钥**（`.pub`）则相当于锁芯，需要放到服务器上。登录时，SSH 会用密钥完成加密签名来证明“我是我”，这比传统密码安全得多——密码可能被暴力猜解，而现代 SSH 密钥（如 `ed25519`）的加密强度在算力上根本猜不动。
 
-把公钥贴到厂商控制台的"SSH 密钥"栏(大部分厂商在创建服务器时让你贴),或者用 root 密码方案(下面第一次登录后手动配置)。
+你可以把公钥内容粘贴到云厂商控制台的“SSH 密钥”一栏（大部分厂商在创建服务器时都会提供这一选项），或者先使用 `root` 密码方案登录（下面第一次登录后再手动配置密钥）。
 
-**【本地】** 第一次登录:
+**【本地】** 发起第一次登录：
 
 ```bash
 ssh root@203.0.113.10
 ```
 
-第一次会看到:
+首次连接一台陌生服务器时，终端会弹出如下确认信息：
 
 ```
 The authenticity of host '203.0.113.10' can't be established.
@@ -81,13 +81,13 @@ ED25519 key fingerprint is SHA256:xxxxxxx...
 Are you sure you want to continue connecting (yes/no/[fingerprint])?
 ```
 
-> **这是什么**:服务器在出示自己的"指纹",问你"要记住吗"。这叫 TOFU(Trust On First Use,首次使用即信任)。正经做法是去厂商控制台核对指纹一致再答 yes——**中级教程会讲指纹对不上时部署必须直接失败**,这里先埋个种子。
+> **这是什么**：服务器正在出示它自己的身份“指纹”，询问你“要记住我吗”。这种机制叫作 TOFU（Trust On First Use，首次使用即信任）。严谨的做法是先去云厂商控制台核对指纹完全一致后再回答 `yes`——**中级教程会讲到，一旦服务器指纹对不上，自动化部署必须直接失败退出**，这里先埋下一颗种子。
 
-输 `yes`。看到提示符变成 `root@ubuntu:~#`,你已经在服务器里了。**这个窗口别关**——第 1.4 节改 SSH 配置时,它是你的"保命通道"。
+输入 `yes` 并回车。当命令行提示符变成 `root@ubuntu:~#` 时，说明你已经站在服务器里面了。**这个终端窗口千万别关**——在第 1.4 节修改 SSH 配置时，它是你的“保命通道”。
 
 ### 1.3 基础更新
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 apt update && apt upgrade -y
@@ -95,38 +95,38 @@ timedatectl set-timezone Asia/Shanghai   # 换成你的时区
 apt install -y unattended-upgrades && dpkg-reconfigure -f noninteractive unattended-upgrades
 ```
 
-> `unattended-upgrades` 让安全补丁自动装上。小服务器没人值守,这是最低限度的自我保护。
+> `unattended-upgrades` 会让系统在后台自动安装安全补丁。对于平时没人专职值守的小服务器来说，这是最低限度的自我保护。
 
-### 1.4 创建日常用户,关掉 root 登录
+### 1.4 创建日常用户，关掉 root 登录
 
-一直用 root 干活很危险(手滑一条命令就是全机器级事故,"最小权限"要从你自己做起)。我们建一个日常用户 `sam`:
+日常一直顶着 `root` 身份干活非常危险——手滑敲错一条命令就是整机级别的事故，“最小权限”原则首先要从管住自己开始。我们来创建一个日常操作用户 `sam`：
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 adduser sam              # 设个密码,其他信息直接回车
 usermod -aG sudo sam     # 把 sam 加进 sudo 组,需要 root 权限时用 sudo 临时提升
 ```
 
-把你的公钥复制给 sam(如果你 1.2 的公钥已经在 root 手里):
+把你的公钥复制给 `sam`（假设你在 1.2 节的公钥已经配在了 `root` 账号下）：
 
 ```bash
 mkdir -p /home/sam/.ssh && cp ~/.ssh/authorized_keys /home/sam/.ssh/ \
   && chown -R sam:sam /home/sam/.ssh && chmod 700 /home/sam/.ssh && chmod 600 /home/sam/.ssh/authorized_keys
 ```
 
-**开一个新终端**测试(**别关 root 那个窗口**):
+**新开一个本地终端窗口**测试登录（**切记别关刚才那个 `root` 窗口**）：
 
-**【本地】**:
+**【本地】**：
 
 ```bash
 ssh sam@203.0.113.10
 sudo whoami             # 输入 sam 的密码,输出 root → sudo 正常
 ```
 
-确认 sam 能登录、能 sudo 之后,禁用 root 的 SSH 登录:
+确认 `sam` 既能正常登录、又能执行 `sudo` 提权之后，就可以禁用 `root` 的 SSH 直接登录了：
 
-**【服务器】**(sam 窗口):
+**【服务器】**（在 `sam` 的窗口中执行）：
 
 ```bash
 sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
@@ -134,19 +134,19 @@ sudo sshd -t && echo CONFIG_OK     # 语法检查,输出 CONFIG_OK 才能继续!
 sudo systemctl reload ssh
 ```
 
-> ⚠️ **原则:不要把自己锁在门外**。刚才这三行是全世界锁死事故的经典来源。三条保险:
-> 1. `sshd -t` 只检查语法,检查不过就 `reload` 不执行;
-> 2. `reload`(不是 `restart`)不会掐断现有连接,root 老窗口还连着;
-> 3. 改完**先在旧窗口保持登录的状态下测试新登录**。真锁死了,还有厂商控制台的网页终端(VNC)这条带外通道——现在就去控制台看一眼它在哪里,真出事时不至于现找。
+> ⚠️ **原则：不要把自己锁在门外**。刚才这三行命令，正是全世界运维锁死事故的经典来源。为此我们专门上了三道保险：
+> 1. `sshd -t` 只检查配置语法，一旦检查不通过，后面的 `reload` 根本不会执行；
+> 2. 使用 `reload`（而不是 `restart`）不会掐断已建立的 SSH 连接，因此你的 `root` 老窗口依然连着；
+> 3. 改完配置后，**务必在旧窗口保持登录的状态下测试新连接能否成功登录**。万一真的把 SSH 锁死了，云厂商控制台提供的网页终端（VNC）就是你最后的带外救急通道——趁现在就去控制台看一眼它的入口在哪里，免得真出事时现找。
 
-✅ **检查点**:
-- [ ] `ssh sam@203.0.113.10` 能登录
-- [ ] `ssh root@203.0.113.10` 被拒绝(`Permission denied`)
-- [ ] 厂商控制台的 VNC/网页终端入口你已知道在哪
+✅ **检查点**：
+- [ ] `ssh sam@203.0.113.10` 能正常登录
+- [ ] `ssh root@203.0.113.10` 被拒绝（提示 `Permission denied`）
+- [ ] 云厂商控制台的 VNC / 网页终端入口位置你已经找过并确认过了
 
-### 1.5 防火墙(ufw)
+### 1.5 防火墙（ufw）
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 sudo ufw allow OpenSSH     # 先放行 22 端口!
@@ -156,7 +156,7 @@ sudo ufw enable            # 顺序!先放行 SSH 再 enable,否则当场锁死�
 sudo ufw status
 ```
 
-预期输出包含:
+预期输出包含：
 
 ```
 To                         Action      From
@@ -166,19 +166,19 @@ To                         Action      From
 443/tcp                    ALLOW       Anywhere
 ```
 
-> 只开这三个口。应用的 3000 端口、数据库的 5432 端口**故意不对公网开放**——它们只应该被本机的 Nginx / 应用访问。
+> 防火墙只对外开放这三个端口。应用本身监听的 3000 端口和数据库的 5432 端口**故意不对公网开放**——它们只应该被服务器本机的 Nginx 和应用进程访问。
 
-✅ **检查点**:`sudo ufw status` 只有 22/80/443;新开一个终端还能 SSH 进来。
+✅ **检查点**：`sudo ufw status` 显示只开放了 22、80、443 三个端口；新开一个终端窗口依然能通过 SSH 登录进来。
 
 ---
 
-## 第 2 章 认识 demo-app,在本地跑起来
+## 第 2 章 认识 demo-app，在本地跑起来
 
 ### 2.1 拿到代码
 
-配套的示例应用就在你正在读的仓库里(`demo-app/` 目录)。把它复制成你自己的第一个项目:
+本课程配套的教学示例应用就在你正在阅读的仓库里（`demo-app/` 目录）。先把它复制出来，作为你自己的第一个独立项目：
 
-**【本地】**:
+**【本地】**：
 
 ```bash
 cp -r /path/to/deploy_tutorial/demo-app ~/Projects/demo-app
@@ -189,9 +189,9 @@ pnpm install               # 首次安装,同时生成 pnpm-lock.yaml
 git add -A && git commit -m "demo-app v1: web + worker + migrations"
 ```
 
-> **`pnpm-lock.yaml` 为什么必须提交**:它锁定了"每个依赖的精确版本"。服务器上 `pnpm install --frozen-lockfile` 会按这份清单装**一模一样**的版本——否则"我电脑上好好的"和"服务器上跑不起来"的经典悲剧就会上演(中级册会专门演练它)。
+> **为什么 `pnpm-lock.yaml` 必须提交进仓库**：它锁定了“每一个依赖包的精确版本”。后续在服务器上执行 `pnpm install --frozen-lockfile` 时，会严格按照这份清单安装**一模一样**的版本——否则，“在我电脑上明明好好的，到服务器上就跑不起来”的经典悲剧迟早会重演（中级册会专门演练这一幕）。
 
-应用长这样(先混个脸熟,每个文件 50 行以内):
+应用的代码结构非常精简，每个文件都在 50 行以内，先混个脸熟：
 
 ```
 demo-app/
@@ -207,11 +207,11 @@ demo-app/
 └── deploy/           # 部署相关(本册只用其中 naive/ 部分)
 ```
 
-### 2.2 本地跑一遍(可选但强烈建议)
+### 2.2 本地跑一遍（可选但强烈建议）
 
-需要本地有 Docker(Mac/Windows 装 Docker Desktop,或 Rancher Desktop)。没有?跳过这节,直接去服务器上跑,回头再补也行。
+这一步需要你本地装有 Docker（Mac 或 Windows 可安装 Docker Desktop 或 Rancher Desktop）。如果本地没有 Docker 也没关系，可以先跳过本节，直接去第 3 章在服务器上跑，回头有空再补上。
 
-**【本地】**:
+**【本地】**：
 
 ```bash
 cp .env.example .env
@@ -223,20 +223,20 @@ DATABASE_URL="postgres://demo_app:你刚才的密码@127.0.0.1:5432/demo_app" \
 APP_ENV=dev STORAGE_DIR=$PWD/storage pnpm run dev
 ```
 
-预期输出:
+预期输出：
 
 ```
 demo-app web listening on 127.0.0.1:3000 (version dev)
 ```
 
-浏览器开 `http://localhost:3000`,再开个终端:
+用浏览器打开 `http://localhost:3000`，同时另开一个终端窗口测试健康检查接口：
 
 ```bash
 curl -s localhost:3000/health/ready
 # {"ok":true,"db":true,"lastPingId":1,"notes":0}
 ```
 
-`"db":true` 说明它真的写了一次数据库。再试一次完整链路(建笔记 → 入队 → worker 消费):
+返回结果中的 `"db":true` 说明应用已经实打实地往数据库里完成了一次写入校验。接着再试一次完整的业务链路（创建笔记 → 任务入队 → worker 消费处理）：
 
 ```bash
 curl -s -X POST localhost:3000/api/notes -H 'content-type: application/json' -d '{"title":"hello"}'
@@ -246,11 +246,11 @@ curl -s localhost:3000/api/jobs/1
 # {"id":"1",...,"status":"done","result":{"shouted":"HELLO","length":5},...}
 ```
 
-本地通过了,上服务器就不慌了。
+在本地把完整流程跑通之后，心里有了底，上服务器部署就不慌了。
 
 ### 2.3 推到你自己的 GitHub 仓库
 
-**【本地】**:
+**【本地】**：
 
 ```bash
 gh repo create demo-app --private --source=. --push    # 装了 GitHub CLI 的话
@@ -258,15 +258,15 @@ gh repo create demo-app --private --source=. --push    # 装了 GitHub CLI 的�
 # git remote add origin git@github.com:你的用户名/demo-app.git && git push -u origin main
 ```
 
-✅ **检查点**:GitHub 上你的私有仓库里能看到 `pnpm-lock.yaml` 和全部代码;`.env` **不在**仓库里(被 `.gitignore` 挡住了)。
+✅ **检查点**：打开你 GitHub 上的私有仓库，能看到 `pnpm-lock.yaml` 和全部源码文件；同时 `.env` 文件**不在**仓库里（已被 `.gitignore` 挡在门外）。
 
 ---
 
-## 第 3 章 服务器安家:Docker、Postgres、Node、代码
+## 第 3 章 服务器安家：Docker、Postgres、Node、代码
 
 ### 3.1 安装 Docker 和 Postgres
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
@@ -275,16 +275,16 @@ sudo usermod -aG docker sam
 docker version          # 能打印版本就 OK
 ```
 
-仓库里的 `docker-compose.yml` 会起一个 Postgres。看一眼它的关键行:
+代码仓库里的 `docker-compose.yml` 负责拉起一个 Postgres 容器。请特别看一眼其中的关键配置行：
 
 ```yaml
 ports:
   - "127.0.0.1:5432:5432"
 ```
 
-> **为什么只绑定 127.0.0.1**:容器端口映射写 `"5432:5432"` 会监听**所有网卡**,等于把数据库暴露到公网(哪怕有密码也是不必要的风险面)。写 `127.0.0.1:5432:5432` 后只有服务器本机能连。这是新手最常踩的安全坑之一。
+> **为什么只绑定 `127.0.0.1`**：如果把容器端口映射写成 `"5432:5432"`，Docker 会默认监听服务器上的**所有网卡**，相当于绕过防火墙把数据库直接暴露到公网上（哪怕设了密码，也是完全不必要的受攻击面）。写成 `127.0.0.1:5432:5432` 之后，只有服务器本机才能连上数据库。这是新手用 Docker 部署服务时最常踩的安全坑之一。
 
-数据库的密码用 `.env` 文件给(和代码里那个 `.env.example` 是两回事,服务器上这个**永远不进 git**):
+数据库的初始化密码通过同目录下的 `.env` 文件传入（注意它和代码仓库里的 `.env.example` 模板是两码事，服务器上的 `.env` **永远不进 git**）。我们先创建应用目录：
 
 ```bash
 cd /srv
@@ -294,7 +294,7 @@ sudo mkdir -p demo-app && sudo chown sam:sam demo-app && cd demo-app
 
 ### 3.2 安装 Node 24 和 pnpm
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -304,17 +304,17 @@ sudo npm install -g pnpm@11
 pnpm -v
 ```
 
-> 仓库里有个 `.node-version` 文件写着 `24.22.1`。中级册的部署脚本会校验"服务器的 Node 主版本 == 仓库声明的主版本"——版本漂移是"本地好好的、服务器报错"的另一大来源。另外:2026-10-21 Node.js 修复了 10 个 CVE(含可致 RCE 的 Brotli 解码漏洞),**钉版本时永远钉到打过最新安全补丁的版本**(22 线对应 22.23.4,本教程用 Active LTS 的 24.22.1)。
+> 代码仓库里有一个 `.node-version` 文件，里面写着 `24.22.1`。中级册的部署脚本会自动校验“服务器当前的 Node 主版本号是否等于仓库声明的主版本号”——运行环境版本漂移，正是造成“本地好好的、服务器报错”的另一大根源。另外提一句：2026-10-21 Node.js 官方修复了 10 个 CVE 安全漏洞（包含可导致远程代码执行的 Brotli 解码漏洞），因此**锁定运行时版本时，永远要锁定到打过最新安全补丁的版本**（22 主线对应 `22.23.4`，本教程统一采用 Active LTS 的 `24.22.1`）。
 
 ### 3.3 创建运行应用的专用用户和拿代码
 
-不用 sam、更不用 root 跑应用,而是建一个专门的 `app` 用户(最小权限:应用被攻破时,攻击者拿到的只是这个无特权身份):
+我们既不用日常账号 `sam`、更不用最高权限的 `root` 来跑应用，而是专门创建一个名为 `app` 的系统用户（最小权限原则：万一应用被攻破，攻击者拿到的也只是这个没有任何管理特权的受限身份）：
 
 ```bash
 sudo useradd --system --create-home --shell /bin/bash app
 ```
 
-给它配一把 GitHub 的**只读 deploy key**(只能拉代码,不能推,泄露了损失可控):
+接着给它配置一把 GitHub 的**只读部署密钥（deploy key）**——这把钥匙只能拉取代码、不能推送修改，就算不慎泄露，损失也完全可控：
 
 ```bash
 sudo -u app mkdir -p /home/app/.ssh
@@ -324,9 +324,9 @@ sudo -u app cat /home/app/.ssh/id_ed25519.pub
 sudo -u app ssh-keyscan -t ed25519 github.com >> /tmp/kh && sudo -u app tee -a /home/app/.ssh/known_hosts < /tmp/kh >/dev/null
 ```
 
-> `ssh-keyscan` 是把 GitHub 的主机密钥**预先**记下来,这样稍后 `git clone` 不会卡在"要不要信任这个指纹"的交互问题上。
+> 上面的 `ssh-keyscan` 命令会把 GitHub 的主机密钥指纹**预先**记录到 `known_hosts` 中，这样稍后执行 `git clone` 时就不会卡在“要不要信任这个指纹”的交互式提问上了。
 
-克隆代码(注意 `app` 用户拥有 `/srv/demo-app`):
+现在克隆代码并完成首次安装与构建（注意 `/srv/demo-app` 目录归 `app` 用户所有）：
 
 ```bash
 sudo chown -R app:app /srv/demo-app
@@ -336,9 +336,9 @@ sudo -u app bash -c 'cd /srv/demo-app && pnpm install --frozen-lockfile && pnpm 
 
 ### 3.4 配置文件和数据库
 
-创建两个文件(内容和 2.2 本地的一样,只是路径是服务器版的):
+接下来创建两份配置文件（作用和 2.2 节本地运行时的配置一样，只是换成了服务器上的标准路径与权限）：
 
-**【服务器】** `# 文件: /srv/demo-app/.env`(compose 用的数据库密码):
+**【服务器】** `# 文件: /srv/demo-app/.env`（供 Docker Compose 使用的数据库密码）：
 
 ```bash
 cd /srv/demo-app
@@ -346,7 +346,7 @@ sudo -u app bash -c 'umask 077 && echo "POSTGRES_PASSWORD=$(openssl rand -hex 16
 sudo -u app grep -c PASSWORD .env    # 输出 1,确认写进去了(别 cat 出来,密码看一眼少一眼)
 ```
 
-启动数据库:
+启动数据库容器：
 
 ```bash
 sudo docker compose up -d db     # 注意:app 用户不在 docker 组里,直接 sudo
@@ -356,7 +356,7 @@ docker exec demo-app-db pg_isready -U demo_app
 # accepting connections
 ```
 
-**【服务器】** `# 文件: /srv/demo-app/runtime.env`(应用配置,给 systemd 用):
+**【服务器】** `# 文件: /srv/demo-app/runtime.env`（应用运行时配置，供稍后的 systemd 服务读取）：
 
 ```bash
 PW=$(sudo -u app sed -n 's/^POSTGRES_PASSWORD=//p' .env)
@@ -369,9 +369,9 @@ EOF"
 sudo chown root:app /srv/demo-app/runtime.env && sudo chmod 0640 /srv/demo-app/runtime.env
 ```
 
-> **为什么又是 root 又是 0640**:这个文件里有数据库密码。`root:app 0640` 意思是"root 能读写,app 组能读,其他人免谈"——应用(app 用户)读得到,而你日常的 sam 用户读不到。中级册会让"连负责部署的 deploy 用户也读不到"成为可验证的事实。
+> **为什么属主是 `root:app` 且权限设为 `0640`**：这份文件里保存着生产数据库的密码。`root:app 0640` 的意思是“只有 `root` 能读写、`app` 组成员只读、其他任何人免谈”——这样运行应用的 `app` 用户能够正常读取配置，而你日常登录的 `sam` 用户无法直接查看。到了中级册，我们还会让“就连专门负责部署的 `deploy` 用户也读不到这份密码”成为可验证的事实。
 
-建表:
+执行数据库迁移，创建表结构：
 
 ```bash
 sudo -u app bash -c 'cd /srv/demo-app && set -a && . ./runtime.env && pnpm run migrate'
@@ -380,14 +380,14 @@ sudo -u app bash -c 'cd /srv/demo-app && set -a && . ./runtime.env && pnpm run m
 # migrate: applied 2 file(s), done
 ```
 
-### 3.5 手动跑一次,然后看着它"死掉"
+### 3.5 手动跑一次，然后看着它“死掉”
 
 ```bash
 sudo -u app bash -c 'cd /srv/demo-app && set -a && . ./runtime.env && node dist/server.js'
 # demo-app web listening on 127.0.0.1:3000 (version dev)
 ```
 
-另开一个窗口验证,然后回到第一个窗口按 `Ctrl-C`:
+另开一个终端窗口登录服务器验证接口，然后切回第一个窗口按下 `Ctrl-C`：
 
 ```bash
 curl -s localhost:3000/version
@@ -395,21 +395,21 @@ curl -s localhost:3000/version
 # Ctrl-C 之后再 curl → curl: (7) Failed to connect
 ```
 
-**这就是本章的核心问题**:进程跟着你的终端活,你一断开/一按 Ctrl-C 它就没了。`nohup`、`&` 后台、`tmux` 都是创可贴——下一章用 systemd 正面解决。
+**这正是本章要揭示的核心问题**：手动跑起来的进程是跟着你当前的终端会话走的，只要你的 SSH 连接一断开，或者顺手按下了 `Ctrl-C`，应用当场就没了。无论是 `nohup`、加 `&` 放后台，还是塞进 `tmux` 里，都只是临时凑合的创可贴——下一章，我们用 systemd 正面解决它。
 
-✅ **检查点**:
-- [ ] `docker ps` 里 `demo-app-db` 是 healthy
-- [ ] `sudo -u app` 能跑起 `dist/server.js`,curl `/health/ready` 返回 `"db":true`
-- [ ] `/srv/demo-app/runtime.env` 权限是 `-rw-r-----  root app`
-- [ ] ufw 仍然只开 22/80/443
+✅ **检查点**：
+- [ ] `docker ps` 里能看到 `demo-app-db` 的状态为 `healthy`
+- [ ] 用 `sudo -u app` 能正常跑起 `dist/server.js`，且 `curl localhost:3000/health/ready` 返回 `"db":true`
+- [ ] `/srv/demo-app/runtime.env` 的权限确认为 `-rw-r-----  root app`
+- [ ] `ufw` 防火墙依然只开放了 22、80、443 三个端口
 
 ---
 
-## 第 4 章 systemd:让应用永不缺席
+## 第 4 章 systemd：让应用永不缺席
 
 ### 4.1 写一个服务单元
 
-**【服务器】** 创建 `# 文件: /etc/systemd/system/demo-app.service`:
+**【服务器】** 创建 `# 文件: /etc/systemd/system/demo-app.service`：
 
 ```ini
 [Unit]
@@ -430,18 +430,18 @@ RestartSec=2
 WantedBy=multi-user.target
 ```
 
-逐行读懂它(以后你写自己的服务就是改这几行):
+花两分钟逐行读懂它（以后你为自己的项目编写后台服务，无非就是改这几行）：
 
-| 行 | 意思 |
+| 配置行 | 含义说明 |
 |---|---|
-| `Wants=/After=` | 期望在网络和 Docker 起来之后再启动(数据库在 Docker 里) |
-| `User=app` | 用 app 身份跑,而不是 root(最小权限) |
-| `EnvironmentFile=` | 启动前加载这份环境变量(就是上一步那个 0640 文件) |
-| `ExecStart=` | 要执行的命令,**必须绝对路径** |
-| `Restart=always` | 进程不管怎么挂(崩溃/OOM)都自动拉起 |
-| `WantedBy=multi-user.target` | "开机自启"的挂载点 |
+| `Wants=/After=` | 声明启动顺序：期望在网络就绪且 Docker 服务启动之后再启动本服务（因为数据库跑在 Docker 里） |
+| `User=app` | 指定以 `app` 用户身份运行进程，而不是 `root`（最小权限原则） |
+| `EnvironmentFile=` | 启动进程前自动加载这份环境变量文件（就是上一节权限为 `0640` 的那个文件） |
+| `ExecStart=` | 实际要执行的启动命令，**必须写绝对路径** |
+| `Restart=always` | 无论进程因为什么原因挂掉（代码崩溃或被系统 OOM 杀掉），一律自动重新拉起 |
+| `WantedBy=multi-user.target` | 声明“开机自启”所挂载的系统运行级别目标 |
 
-启用它:
+加载配置并启用服务：
 
 ```bash
 sudo systemctl daemon-reload
@@ -449,32 +449,32 @@ sudo systemctl enable --now demo-app
 systemctl status demo-app --no-pager
 ```
 
-预期看到 `Active: active (running)`。测接口:
+预期能看到 `Active: active (running)`。接着测试健康检查接口：
 
 ```bash
 curl -s localhost:3000/health/ready && echo
 # {"ok":true,"db":true,...}
 ```
 
-### 4.2 三件事证明它"永不缺席"
+### 4.2 三件事证明它“永不缺席”
 
-**🧪 实验 1:杀掉它**
+**🧪 实验 1：强行杀掉它**
 
 ```bash
 sudo kill -9 $(systemctl show -p MainPID --value demo-app)
 sleep 3 && systemctl is-active demo-app    # active —— 自动拉起了
 ```
 
-**🧪 实验 2:看日志**(systemd 替你收好了 stdout/stderr):
+**🧪 实验 2：查看日志**（systemd 已经替你把进程的 `stdout` 和 `stderr` 全都收集好了）：
 
 ```bash
 journalctl -u demo-app -n 20 --no-pager    # 最近 20 行
 journalctl -u demo-app -f                  # 实时滚动(Ctrl-C 退出,不影响服务)
 ```
 
-> 以后排查"应用怎么挂了",第一反应就是 `journalctl -u 服务名 -n 100`。
+> 从今往后，排查“应用怎么突然挂了”的第一反应就是敲：`journalctl -u 服务名 -n 100`。
 
-**🧪 实验 3:重启整台服务器**
+**🧪 实验 3：重启整台服务器**
 
 ```bash
 sudo reboot
@@ -483,22 +483,22 @@ curl -s localhost:3000/health/ready && echo
 # {"ok":true,...} —— 开机自启成立,Postgres 也回来了
 ```
 
-✅ **检查点**:三个实验的结果你都亲眼看到了。从此"应用在不在跑"这个问题有了标准答案:`systemctl is-active demo-app`。
+✅ **检查点**：以上三个实验的结果你都亲眼见证过了。从此以后，“线上应用到底在不在跑”这个问题有了标准答案：`systemctl is-active demo-app`。
 
 ---
 
-## 第 5 章 Nginx + HTTPS:给应用一个正式的门牌
+## 第 5 章 Nginx + HTTPS：给应用一个正式的门牌
 
 ### 5.1 域名解析
 
-到你买域名的厂商后台,添加 **A 记录**:
+登录你购买域名的服务商后台，添加一条 **A 记录**：
 
 ```
 主机记录: deploy-demo     (即 deploy-demo.example.com 的前缀)
 记录值:   203.0.113.10
 ```
 
-**【本地】** 验证解析生效(通常几分钟内):
+**【本地】** 验证 DNS 解析是否生效（通常几分钟内即可生效）：
 
 ```bash
 dig +short deploy-demo.example.com
@@ -507,7 +507,7 @@ dig +short deploy-demo.example.com
 
 ### 5.2 Nginx 反向代理
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 sudo apt install -y nginx
@@ -530,11 +530,11 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-> **反向代理在干嘛**:应用只听 `127.0.0.1:3000`(公网根本连不进来),Nginx 站在 80/443 端口收下所有请求,转给应用。好处:证书归 Nginx 管、以后换端口不动域名、应用挂了至少能返回个像样的错误页。
+> **反向代理到底在干什么**：我们的应用只监听本机的 `127.0.0.1:3000`（公网流量根本连不进来），而由 Nginx 站在公网的 80 和 443 端口收下所有外部请求，再转发给本机应用。这样做的好处很明显：TLS 证书统一归 Nginx 管理、以后调整应用内部端口完全不用动域名、即便后端应用挂了，Nginx 至少还能给用户返回一个体面的错误页。
 
-浏览器访问 `http://deploy-demo.example.com` —— 应该看到 demo-app 首页。
+现在用浏览器访问 `http://deploy-demo.example.com`——你应该能看到 `demo-app` 的首页了。
 
-### 5.3 上 HTTPS(Let's Encrypt)
+### 5.3 上 HTTPS（Let's Encrypt）
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
@@ -543,7 +543,7 @@ sudo certbot --nginx -d deploy-demo.example.com
 # 选 Redirect(强制 HTTPS)
 ```
 
-`certbot` 做了三件事,值得知道:向 Let's Encrypt 证明你控制这个域名(它会让你放一个临时文件并通过 80 端口访问验证)、改写 Nginx 配置挂上证书、设置自动续期的定时器。验证续期:
+`certbot` 在背后替你干了三件大事，值得了解：第一，向 Let's Encrypt 证明你确实控制着这个域名（它会在本机放一个临时验证文件，让对方通过 80 端口访问核验）；第二，自动改写 Nginx 配置文件，挂上刚签发的证书并配置 HTTPS 跳转；第三，在系统里设置好自动续期的定时器。我们来验证一下续期机制：
 
 ```bash
 sudo certbot renew --dry-run
@@ -556,19 +556,19 @@ curl -sI https://deploy-demo.example.com | head -3
 # HTTP/2 200 ...
 ```
 
-> 没有域名怎么办?见附录 A。但**生产上 HTTPS 不是可选项**:没有它,用户到服务器之间的明文流量(包括登录态 cookie)任何中间人都看得见、改得了。
+> 如果手头暂时没有域名怎么办？请见文末附录 A。但请记住：**在生产环境里，HTTPS 绝不是可选项**。没有它，用户与服务器之间传输的所有明文流量（包括登录态 Cookie）在沿途任何网络中间人眼里都一览无余，随时可以被窃听或篡改。
 
-✅ **检查点**:`https://deploy-demo.example.com` 浏览器打开有小锁;`curl -I http://...` 会 301 到 https。
+✅ **检查点**：用浏览器打开 `https://deploy-demo.example.com` 时地址栏带有安全小锁图标；执行 `curl -I http://deploy-demo.example.com` 会收到 `301` 响应并自动跳转到 `https`。
 
 ---
 
-## 第 6 章 备份与恢复演练:没演练过的备份等于没有
+## 第 6 章 备份与恢复演练：没演练过的备份等于没有
 
-> 本章源起一条血泪原则:GitLab 2017 年丢库事故里,多套备份机制**全都不可用**。所以本章的产出不是"备份脚本",而是"**亲手恢复成功过的备份脚本**"。
+> 本章源于一条血泪教训：在 2017 年著名的 GitLab 生产删库事故中，团队事先准备的多套备份机制在关键时刻**全都不可用**。因此，本章的交付物不是一份“备份脚本”，而是一份“**你亲手用它恢复成功过的备份脚本**”。
 
 ### 6.1 写备份脚本
 
-**【服务器】** `# 文件: /home/sam/backup-naive.sh`(内容和仓库 `deploy/naive/backup-naive.sh` 一致):
+**【服务器】** `# 文件: /home/sam/backup-naive.sh`（内容与代码仓库中的 `deploy/naive/backup-naive.sh` 一致）：
 
 ```bash
 #!/usr/bin/env bash
@@ -591,9 +591,11 @@ echo "==> latest:"
 ls -lh "$DEST/db" | tail -3
 ```
 
-两个要点:
-- `pg_dump --format=custom` 生成压缩的二进制备份,恢复时用 `pg_restore`,可以选择性恢复单张表;
-- **备份里必须有 `/srv/demo-app/storage`**(文件存储)。只备数据库是最典型的备份盲区:数据库毫发无损,用户上传的文件全没了。
+这里有两个关键要点：
+- `pg_dump --format=custom` 会生成经过压缩的二进制备份文件，恢复时配合 `pg_restore` 使用，还支持按需选择性恢复单张表；
+- **备份范围里必须包含 `/srv/demo-app/storage`**（文件存储目录）。只备份数据库而漏掉磁盘文件，是最典型的备份盲区：真出事恢复完一看，数据库记录毫发无损，用户上传的文件却全没了。
+
+赋予执行权限并手动跑一次：
 
 ```bash
 chmod +x ~/backup-naive.sh && ~/backup-naive.sh
@@ -601,7 +603,7 @@ chmod +x ~/backup-naive.sh && ~/backup-naive.sh
 # -rw-r--r-- 1 sam sam 12K 2026-10-25 12:00 20261025T040000Z.dump
 ```
 
-### 6.2 每天自动跑(cron)
+### 6.2 每天自动跑（cron）
 
 ```bash
 crontab -e
@@ -609,13 +611,13 @@ crontab -e
 17 3 * * * /home/sam/backup-naive.sh >> /home/sam/backups/backup.log 2>&1
 ```
 
-> `crontab` 的五列:分 时 日 月 周。明早起来 `ls ~/backups/demo-app/db` 能看到新文件就算数。
+> `crontab` 时间表达式的五列依次是：分、时、日、月、周。明天早上起来执行 `ls ~/backups/demo-app/db`，能看到凌晨自动生成的新备份文件就算成功。
 
-### 6.3 恢复演练(本章的灵魂)
+### 6.3 恢复演练（本章的灵魂）
 
-🧪 **实验:假装灾难发生了,把数据库恢复到 5 分钟前。**
+🧪 **实验：假装线上灾难已经发生，现在要把数据库恢复到 5 分钟前的备份时间点。**
 
-先制造一点数据:
+我们先往线上写入两条分属备份前后的测试数据：
 
 ```bash
 curl -s -X POST https://deploy-demo.example.com/api/notes -H 'content-type: application/json' -d '{"title":"before backup"}'
@@ -623,7 +625,7 @@ curl -s -X POST https://deploy-demo.example.com/api/notes -H 'content-type: appl
 curl -s -X POST https://deploy-demo.example.com/api/notes -H 'content-type: application/json' -d '{"title":"after backup (should vanish)"}'
 ```
 
-起一个**临时的**恢复用数据库(和生产库互不相干):
+接着拉起一个**临时的**恢复演练用数据库容器（与线上生产库完全独立、互不相干）：
 
 ```bash
 docker run -d --name restore-drill -e POSTGRES_PASSWORD=drill \
@@ -633,7 +635,7 @@ docker cp ~/backups/demo-app/db/$LATEST restore-drill:/tmp/restore.dump
 time docker exec restore-drill pg_restore -U drill -d drill --no-owner /tmp/restore.dump
 ```
 
-对照数据:
+对照演练库与生产库里的数据：
 
 ```bash
 docker exec restore-drill psql -U drill -d drill -Atc "SELECT title FROM notes ORDER BY id"
@@ -644,39 +646,39 @@ docker exec demo-app-db psql -U demo_app -d demo_app -Atc "SELECT title FROM not
 docker rm -f restore-drill
 ```
 
-**两个从此刻起属于你的概念**(高级册会认认真真测它们):
+**从这一刻起，有两个核心运维概念真正属于你了**（高级册还会带大家用实验严格测量它们）：
 
-- **RPO**(Recovery Point Objective):最多丢多久的数据。你现在的方案:每日备份 → 最坏丢 24 小时。
-- **RTO**(Recovery Time Objective):多久能恢复。刚才 `time` 的输出就是你的第一手 RTO 数据——把它记下来。
+- **RPO**（Recovery Point Objective，恢复点目标）：灾难发生时最多能容忍丢失多久的数据。按你现在的每日备份方案，最坏情况下会丢掉 24 小时的数据。
+- **RTO**（Recovery Time Objective，恢复时间目标）：从灾难发生到恢复服务需要多久。刚才 `time` 命令打印出的耗时，就是你亲手测得的第一手 RTO 数据——请把它记下来。
 
 ### 6.4 异地副本
 
-备份和数据库在同一台机器同一块盘上 = 火烧连营。最低成本的异地化:
+如果备份文件和生产数据库放在同一台机器、同一块硬盘上，一旦机器故障就等于“火烧连营”。成本最低的异地容灾做法，就是定期把备份拉回你自己的电脑：
 
-**【本地】** 把备份拉回你自己电脑:
+**【本地】** 把服务器上的备份同步回本机：
 
 ```bash
 mkdir -p ~/demo-app-backups
 rsync -av sam@203.0.113.10:backups/demo-app/ ~/demo-app-backups/
 ```
 
-把它也放进本地的 crontab(Mac:`crontab -e`;Windows:任务计划程序跑同样命令)。进阶(对象存储 + rclone)见高级册第 6 章。
+你同样可以把这条命令放进本机的定时任务里（Mac 用 `crontab -e`；Windows 用“任务计划程序”定期跑同一条命令）。更进阶的云端异地方案（对象存储 + `rclone`）将在高级册第 6 章介绍。
 
-✅ **检查点**:
-- [ ] 手动跑过备份,`~/backups/demo-app/db` 里有 `.dump` 文件
-- [ ] 恢复演练完整做过一次,"after backup" 那条确实没恢复出来(你要的正是这个证据)
-- [ ] cron 已配置;本地有一份拷贝
-- [ ] 你能回答:我这套方案 RPO 是多少?
+✅ **检查点**：
+- [ ] 手动跑过一次备份脚本，`~/backups/demo-app/db` 目录下有 `.dump` 文件
+- [ ] 完整做过一次恢复演练，确认备份后写入的 `"after backup"` 那条记录确实没有恢复出来（你要验证的正是这个证据）
+- [ ] 服务器 `cron` 已配置妥当；你本地电脑上也同步了一份备份拷贝
+- [ ] 你能脱口而出回答：我这套备份方案当前的 RPO 是多少？
 
 ---
 
-## 第 7 章 第一条部署流水线:deploy-v0 与它的八宗罪
+## 第 7 章 第一条部署流水线：deploy-v0 与它的八宗罪
 
-现在改代码还得手动上服务器敲命令,我们把它脚本化——然后诚实地面对这个脚本的每个问题,它们正是中级教程的目录。
+到现在为止，每次改完代码还得手动登录服务器敲一串命令更新。我们先把这套动作脚本化——然后再诚实地直面这份朴素脚本里的每一个缺陷。这八个问题，恰恰就是中级教程的章节目录。
 
 ### 7.1 v0 部署脚本
 
-**【服务器】** `# 文件: /home/sam/deploy-naive.sh`(内容同仓库 `deploy/naive/deploy-naive.sh`):
+**【服务器】** `# 文件: /home/sam/deploy-naive.sh`（内容同代码仓库中的 `deploy/naive/deploy-naive.sh`）：
 
 ```bash
 #!/usr/bin/env bash
@@ -695,13 +697,15 @@ sudo systemctl restart demo-app
 echo "deployed: $(sudo -u app git -C /srv/demo-app rev-parse --short HEAD)"
 ```
 
+赋予可执行权限：
+
 ```bash
 chmod +x ~/deploy-naive.sh
 ```
 
 ### 7.2 全流程体验一次
 
-**【本地】** 改一行代码,走完整流程:
+**【本地】** 改一行代码并推送到仓库，走一遍完整发版流程：
 
 ```bash
 cd ~/Projects/demo-app
@@ -709,20 +713,20 @@ sed -i '' 's/<h1>demo-app<\/h1>/<h1>demo-app v2<\/h1>/' src/server.js   # Mac;Li
 git commit -am "v2: change title" && git push
 ```
 
-**【服务器】**:
+**【服务器】**：
 
 ```bash
 ~/deploy-naive.sh && curl -s https://deploy-demo.example.com | grep h1
 # <h1>demo-app v2</h1>
 ```
 
-恭喜,你有了一条部署流水线!现在,诚实的时刻到了。
+恭喜，你已经拥有了第一条部署流水线！现在，诚实面对问题的时刻到了。
 
 ### 7.3 八宗罪审判
 
-**🧪 罪状 #1:停机窗口。** 部署的 `systemctl restart` 期间,请求是失败的。测出来:
+**🧪 罪状 #1：停机窗口。** 在部署脚本执行 `systemctl restart` 期间，到达服务器的请求是会直接失败的。我们来亲手把它测出来：
 
-**【本地】** 一边狂发请求一边部署:
+**【本地】** 一边以 0.2 秒的间隔狂发请求，一边在服务器上触发部署：
 
 ```bash
 while true; do
@@ -731,9 +735,9 @@ while true; do
 done
 ```
 
-**【服务器】** 另一个终端跑 `~/deploy-naive.sh`,观察本地输出。你会看到若干 `000 ...s` 或 `FAIL` —— 那就是用户视角的"网站挂了"。**记下连续失败的时长**(通常几百毫秒到几秒)。中级册会做原子切换,高级册的蓝绿实验会把它压到接近零。
+**【服务器】** 在另一个终端窗口运行 `~/deploy-naive.sh`，同时观察本地终端的输出。你会看到若干行 `000 ...s` 或 `FAIL`——那就是用户视角下的“网站挂了”。**请记下连续失败持续的时长**（通常在几百毫秒到几秒之间）。中级册会通过软链原子切换大幅缩短这个窗口，而高级册的蓝绿部署实验会把它进一步压到接近于零。
 
-**🧪 罪状 #2:构建在生产机上。** `pnpm install` + `build` 跑在为用户服务的机器上:抢 CPU/内存(小机器上能让线上延迟肉眼可见地变差),且**断网就无法部署**。试试(注意 origin 是 SSH 形式走 22 端口,两条都要堵;已有 SSH 会话不受影响——iptables 的 OUTPUT 规则只拦"新建"的出站连接):
+**🧪 罪状 #2：构建在生产机上。** `pnpm install` 和 `pnpm run build` 直接跑在正在为用户服务的生产机器上：不仅会争抢 CPU 与内存（在小规格机器上足以让线上响应延迟肉眼可见地变差），而且**一旦断网就彻底无法部署**。不妨亲手试试（注意我们的 Git `origin` 是 SSH 形式，走 22 端口，因此要把 22 和 443 两条出站规则都堵上；不用担心你现有的 SSH 会话断掉——`iptables` 的 `OUTPUT` 规则只拦截“新建”的出站连接）：
 
 ```bash
 sudo iptables -A OUTPUT -p tcp --dport 22 -j DROP    # git@github.com 走这里
@@ -743,50 +747,50 @@ sudo iptables -D OUTPUT -p tcp --dport 22 -j DROP    # 测完记得删掉这两�
 sudo iptables -D OUTPUT -p tcp --dport 443 -j DROP
 ```
 
-**🧪 罪状 #3:半成品状态。** 假设 `build` 失败(本地故意写个语法错误推上去):`set -e` 让脚本停了,但注意——**如果失败发生在 migrate 之后 restart 之前**,数据库已是新 schema,跑的还是旧代码。现在没事,纯属运气。
+**🧪 罪状 #3：半成品状态。** 假设 `build` 步骤中途失败（比如你在本地故意写个语法错误推上去）：虽然 `set -e` 会让脚本停下来，但请留意——**如果失败恰好发生在 `migrate` 之后、`restart` 之前**，此时数据库已经是新表结构（schema），而线上跑的却还是旧代码。刚才没出事，纯属运气好。
 
-**🧪 罪状 #4:没有健康检查。** 脚本跑完就宣布成功。新版本起没起来?`/health/ready` 通不通?没人知道。真实世界:重启后 30 秒内崩掉(OOM、缺环境变量)的案例数不胜数。
+**🧪 罪状 #4：没有健康检查。** 脚本跑完最后一行就径直宣布部署成功了。至于新版本进程到底起没起来、`/health/ready` 接口通不通，完全没人知道。在真实世界里，进程重启后 30 秒内因为内存溢出（OOM）或缺少环境变量而崩溃的案例数不胜数。
 
-**🧪 罪状 #5:回滚靠手速。** 新版本挂了怎么办?`git reset` + 重新 build + 再 restart,全程手忙脚乱,而且旧版本很可能已经被清掉了。**回滚应该是和部署一样顺手的命令**(中级册的 `rollback.sh`)。
+**🧪 罪状 #5：回滚靠手速。** 新版本上线后挂了怎么办？你只能手忙脚乱地执行 `git reset`、重新 `build`、再 `restart`，而且此时旧版本的构建产物很可能已经被覆盖清掉了。**回滚应当是一条和部署一样顺手的一等公民命令**（即中级册的 `rollback.sh`）。
 
-**🧪 罪状 #6:权限过大。** 这个脚本以 sam 运行,sam 有完整 sudo。部署逻辑理论上只需要"重启一个服务、跑一次迁移、做一次备份"——最小权限要求把权限收窄到这几个动作。
+**🧪 罪状 #6：权限过大。** 这个脚本以 `sam` 身份运行，而 `sam` 拥有完整的 `sudo` 权限。然而部署逻辑在理论上只需要“重启一个服务、跑一次数据库迁移、做一次备份”——最小权限原则要求我们把部署通道的权限严格收窄到这几个动作之内。
 
-**🧪 罪状 #7:没有记录。** 谁、什么时候、部署了哪个版本、结果如何?现在全靠翻 shell 历史,谈不上任何可审计性。
+**🧪 罪状 #7：没有记录。** 究竟是谁、在什么时候、部署了哪个版本、结果成功还是失败？现在全靠去翻个人的 shell 历史记录，谈不上任何可审计性。
 
-**🧪 罪状 #8:代码与迁移的错配窗口。** 顺序是 `migrate → restart`:迁移完成后、新代码启动前,是**旧代码 + 新数据库**的组合。大多数 additive 迁移没事,但破坏性迁移会当场打死旧代码(这就是回滚安全问题)。正确姿势(expand/contract)在高级册第 6 章。
+**🧪 罪状 #8：代码与迁移的错配窗口。** 脚本里的顺序是 `migrate → restart`：在迁移执行完成之后、新代码启动完成之前，线上实际上处于**“旧代码 + 新数据库”**的混跑状态。大多数只增不减的兼容式迁移（additive migration）还能相安无事，但一旦遇到破坏性迁移，就会当场打死正在运行的旧代码（这也是回滚安全的核心痛点）。正确的两阶段演进姿势（expand/contract）将在高级册第 6 章详解。
 
 ### 7.4 初级册总结
 
-你已经有了一套**能日常使用**的上线流程,以及一份诚实的问题清单。中级教程把八宗罪逐一变成工程方案:
+走到这里，你已经拥有了一套**能够日常使用**的上线流程，外加一份诚实的问题清单。接下来的中级教程，会把这“八宗罪”逐一变成严谨的工程方案：
 
 | 罪状 | 中级册的解法 |
 |---|---|
-| #1 停机窗口 | `releases/<sha>` 目录 + `current` 软链原子切换(窗口缩小到 restart 一瞬) |
-| #2 生产机构建 | (先保留,高级册做对比实验后再决策) |
-| #3 半成品 | 先构建到 `.partial`,全部成功才提升为 release |
-| #4 无健康检查 | 断言 `/version` == 目标 SHA + DB 读写 + worker 心跳 + soak 窗口 |
-| #5 回滚靠手速 | `rollback.sh`:一等公民命令,不依赖外网 |
-| #6 权限过大 | deploy 用户 + SSH 强制命令 + sudoers 白名单 |
-| #7 无记录 | audit.log:每次部署一行(谁/何时/SHA/结果/耗时) |
-| #8 错配窗口 | 迁移失败则代码不切换;破坏性变更按 expand/contract 两阶段 |
+| #1 停机窗口 | `releases/<sha>` 目录 + `current` 软链原子切换（窗口缩小到 `restart` 一瞬） |
+| #2 生产机构建 | （先保留，高级册做完对比实验后再用数据决策） |
+| #3 半成品 | 先构建到 `.partial` 临时目录，全部检验成功才原子提升为正式 release |
+| #4 无健康检查 | 断言 `/version` == 目标 SHA + 数据库读写 + worker 心跳 + soak 观察窗口 |
+| #5 回滚靠手速 | `rollback.sh`：一等公民命令，秒级切换且不依赖外网 |
+| #6 权限过大 | 专用 `deploy` 用户 + SSH 强制命令 + `sudoers` 白名单 |
+| #7 无记录 | `audit.log`：每次部署自动记录一行（谁/何时/SHA/结果/耗时） |
+| #8 错配窗口 | 迁移失败则代码绝不切换；破坏性变更严格按 expand/contract 两阶段执行 |
 
-✅ **毕业检查点**:
-- [ ] 能不查文档说出 `systemctl status / journalctl -u / ufw status` 的用途
-- [ ] 完成过一次完整的恢复演练并能说出自己的 RPO
-- [ ] 亲手测过 v0 的停机窗口,有数字
-- [ ] 八宗罪每条都能用自己的话讲一遍
+✅ **毕业检查点**：
+- [ ] 能不查文档直接说出 `systemctl status`、`journalctl -u`、`ufw status` 的用途
+- [ ] 完成过一次完整的恢复演练，并能说出自己当前方案的 RPO
+- [ ] 亲手测过 v0 部署脚本的停机窗口，手头有实测数字
+- [ ] 八宗罪里的每一条都能用自己的话讲上一遍
 
 ---
 
 ## 附录 A 没有域名怎么办
 
-- **IP 直连 + 仅 HTTP**:`certbot` 那节跳过,`server_name` 写 `_`。缺点:没有锁标、明文、Cookie 裸奔。仅限临时体验。
-- **sslip.io / nip.io**:`203.0.113.10.sslip.io` 会自动解析到 `203.0.113.10`,零配置。可以用来练习 DNS 和证书签发,但共享域有 Let's Encrypt 限速风险,**不要用于生产**。
-- 建议:$2/年的域名是最划算的学习投资。
+- **IP 直连 + 仅 HTTP**：直接跳过 `certbot` 那一节，Nginx 配置里的 `server_name` 写成 `_`。缺点：浏览器没有安全锁图标、全程明文传输、Cookie 裸奔。仅限临时体验。
+- **sslip.io / nip.io**：访问 `203.0.113.10.sslip.io` 会自动解析到 `203.0.113.10`，完全零配置。非常适合用来练习 DNS 解析和证书签发，但由于共享域名存在触发 Let's Encrypt 限速的风险，**切勿用于生产环境**。
+- **建议**：花 $2/年买一个真实域名，是最划算的学习投资。
 
-## 附录 B 不想花钱:本地 VM 练习
+## 附录 B 不想花钱：本地 VM 练习
 
-Multipass 三条命令起一台同款 Ubuntu:
+使用 Multipass 只需三条命令，就能在本地拉起一台同款 Ubuntu 24.04 虚拟机：
 
 ```bash
 brew install --cask multipass          # 或官方安装包
@@ -795,34 +799,34 @@ multipass shell lab                    # 效果等同 ssh,后续章节照做
 multipass delete lab && multipass purge  # 用完销毁
 ```
 
-局限:没有真实公网 IP → 第 5 章 HTTPS 只能自签证书练习,中级册的 GitHub Actions 真链路要用"在宿主机上模拟 CI 的 ssh 调用"变体(方法见高级册附录 C)。**结论:学概念用 VM,学真实链路还是要一台真 VPS。**
+局限性：本地虚拟机没有真实公网 IP → 第 5 章的 HTTPS 只能改用自签证书练习，而中级册的 GitHub Actions 真实部署链路需要改用“在宿主机上模拟 CI 的 `ssh` 调用”变体（具体方法见高级册附录 C）。**结论：学基础概念用本地 VM，学真实公网链路还是要有一台真 VPS。**
 
 ## 附录 C 迁移到你自己的应用
 
-初级的骨架是通用的,换项目时过一遍这张表:
+初级教程这套部署骨架是完全通用的，换成你自己的项目时，只需对照这张表过一遍：
 
-| 换什么 | 在哪 |
+| 换什么 | 在哪改 |
 |---|---|
-| 应用端口(3000) | `runtime.env` 的 `PORT` + Nginx `proxy_pass` |
-| "构建"命令(`pnpm run build`) | 产出可运行产物的任意命令(`go build`、`mvn package`...) |
-| 数据库(容器 Postgres) | 换 MySQL/SQLite 只是 compose 文件和连接串的事;没有 DB 就删掉 migrate 相关步骤 |
-| systemd 单元 | `ExecStart` 一行;Java 写 `java -jar app.jar`,Python 写 `.venv/bin/gunicorn ...` |
-| 备份脚本 | `pg_dump` 换成 `mysqldump`/文件快照;**storage 目录备份保留** |
-| `/health/ready` | 强烈建议你的应用也提供:检查关键依赖 + 真实读写 |
+| 应用端口（3000） | `runtime.env` 里的 `PORT` + Nginx 配置里的 `proxy_pass` |
+| “构建”命令（`pnpm run build`） | 产出可运行产物的任意命令（如 `go build`、`mvn package` 等） |
+| 数据库（容器 Postgres） | 换 MySQL 或 SQLite 只是改 `docker-compose.yml` 和连接串的事；若没有数据库，直接删掉 `migrate` 相关步骤即可 |
+| systemd 单元 | 改 `ExecStart` 那一行：Java 写 `java -jar app.jar`，Python 写 `.venv/bin/gunicorn ...` |
+| 备份脚本 | 把 `pg_dump` 换成 `mysqldump` 或文件快照；**务必保留对 `storage` 目录的备份** |
+| `/health/ready` | 强烈建议你的应用也提供该接口：检查关键依赖 + 执行一次真实读写 |
 
 ## 附录 D 常见报错速查
 
 | 报错 | 原因 → 解法 |
 |---|---|
-| `Permission denied (publickey)` | 本地私钥与服务器公钥不配对/没传对用户 → `ssh -v` 看它试了哪把钥匙 |
-| `curl: (7) Failed to connect ... port 3000` | 应用没起 → `systemctl status demo-app`、`journalctl -u demo-app -n 50` |
-| `502 Bad Gateway`(Nginx 页面) | Nginx 活着但后端死了 → 同上,十有八九是应用崩了 |
-| `EADDRINUSE` | 3000 被占 → `sudo ss -ltnp | grep 3000` 找到占位进程 |
-| `password authentication failed for user "demo_app"` | `.env` 里的密码和 `runtime.env` 的 `DATABASE_URL` 不一致 → 对齐后 `docker compose up -d db` 重建(数据卷已存在时改密码不会生效,`docker compose down -v` 可重来,**会删数据**) |
-| `pnpm install` 报 lockfile 不匹配 | 本地改了 `package.json` 没更新锁 → 本地 `pnpm install` 后提交 `pnpm-lock.yaml` |
-| 部署后页面还是旧的 | 构建产物没更新/浏览器缓存 → `curl -s 域名/version`;强刷浏览器 |
-| `disk full` | 日志/备份挤爆 → `df -h`、`journalctl --vacuum-size=200M`、清 `~/backups` |
+| `Permission denied (publickey)` | 本地私钥与服务器公钥不配对，或传错了用户 → 用 `ssh -v` 查看它实际尝试了哪把钥匙 |
+| `curl: (7) Failed to connect ... port 3000` | 应用进程没起来 → 检查 `systemctl status demo-app` 和 `journalctl -u demo-app -n 50` |
+| `502 Bad Gateway`（Nginx 页面） | Nginx 活着但后端应用死了 → 排查方式同上，十有八九是应用进程崩了 |
+| `EADDRINUSE` | 3000 端口被占用了 → 执行 `sudo ss -ltnp | grep 3000` 找到占位进程 |
+| `password authentication failed for user "demo_app"` | `.env` 里的密码和 `runtime.env` 的 `DATABASE_URL` 不一致 → 对齐密码后执行 `docker compose up -d db` 重建（注意数据卷已存在时单改密码不会生效，可用 `docker compose down -v` 重来，**但 `docker compose down -v` 会删数据**） |
+| `pnpm install` 报 lockfile 不匹配 | 本地改了 `package.json` 却没更新锁文件 → 在本地跑一次 `pnpm install` 后提交 `pnpm-lock.yaml` |
+| 部署后页面还是旧的 | 构建产物没更新或浏览器缓存 → 在服务器跑 `curl -s 域名/version` 核对版本，并强制刷新浏览器 |
+| `disk full` | 日志或备份把磁盘挤爆了 → 用 `df -h` 查看占用，执行 `journalctl --vacuum-size=200M` 清理日志，并清理 `~/backups` |
 
 ---
 
-*下一册:[中级教程 —— 推送即部署,失败自动回滚](02-intermediate.md)*
+*下一册：[中级教程 —— 推送即部署，失败自动回滚](02-intermediate.md)*
