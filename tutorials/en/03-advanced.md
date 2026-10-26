@@ -1,10 +1,10 @@
 # Advanced: Experiments, Measurements, and Upgrade Decisions
 
-> **What you'll learn**: answer four real architecture questions with experiments — where to build (D1), how to trigger (D2), how to switch (D3), how to manage credentials (D4); turn backups from "should work" into "a drilled record with RPO/RTO numbers"; manufacture deployment incidents on yourself (kill -9, power loss, OOM) and watch the system recover; and leave with an honest decision table for "when is Kubernetes actually worth it".
+> **What you'll learn**: answer four real architecture questions with experiments — where to build, how to trigger deploys, how to switch traffic, how to manage credentials; turn backups from "should work" into "a drilled record with RPO/RTO numbers"; manufacture deployment incidents on yourself (kill -9, power loss, OOM) and watch the system recover; and leave with an honest decision table for "when is Kubernetes actually worth it".
 >
 > **Prerequisites**: intermediate book completed (v1 pipeline live), and a willingness to break your own lab server. **Strongly recommended**: spin up a fresh hourly-billed VPS for this book's experiments and destroy it afterwards (total cost usually <$1). Do not run Chapters 2/3/7 on a machine serving real users.
 >
-> **Principles**: P1 build once deploy everywhere, P2 rollback safety, P5 drilled backups, P6 blast radius, P7 short-lived credentials, P12 reconcilable desired state, P13 simplicity first — including knowing when **not** to adopt a tool.
+> **Principles**: build once, deploy everywhere; rollback safety; drilled backups; contained blast radius; short-lived credentials; reconcilable desired state; simplicity first — including knowing when **not** to adopt a tool.
 
 **Method**: every section is one experiment, always in this format:
 
@@ -15,7 +15,7 @@ Observe:   what to watch, how to record
 Verdict:   X holds / fails; under what conditions a switch is worth it (upgrade trigger)
 ```
 
-> The format comes straight from the [design document](../../deploy-experiment-prompt.md): **every conclusion needs evidence (commands, logs, exit codes), not assertions.** After each experiment, leave yourself one line of evidence in your notes.
+> The iron rule of this format: **every conclusion needs evidence (commands, logs, exit codes), not assertions.** After each experiment, leave yourself one line of evidence in your notes.
 
 ---
 
@@ -74,9 +74,9 @@ Trigger:   (under what conditions to switch / not switch)
 
 ---
 
-## Chapter 2: Experiment D3 — the Restart Window and Blue-Green
+## Chapter 2: Experiment — the Restart Window and Blue-Green
 
-### 2.1 Baseline: measure v1's window (E1)
+### 2.1 Baseline: measure v1's window
 
 **Hypothesis**: the intermediate book's "atomic switch + restart" still has an observable downtime window (tens to hundreds of ms).
 
@@ -171,11 +171,11 @@ echo "switched to $NEXT ($SHA)"
 
 ---
 
-## Chapter 3: Experiment D1 — Where to Build
+## Chapter 3: Experiment — Where to Build
 
-**Hypothesis** (H7): building on the production machine (a) degrades the live service, (b) breaks deploys without internet, (c) produces non-reproducible artifacts. CI-built artifacts (D1) fix all three, at the cost of artifact distribution infrastructure.
+**Hypothesis**: building on the production machine (a) degrades the live service, (b) breaks deploys without internet, (c) produces non-reproducible artifacts. CI-built artifacts fix all three, at the cost of artifact distribution infrastructure.
 
-### 3.1 Baseline: the cost of building in place (C4)
+### 3.1 Baseline: the cost of building in place
 
 **Steps**:
 1. [server] keep resources tight — that 1GB lab machine is perfect.
@@ -210,14 +210,14 @@ package:
         retention-days: 14
 ```
 
-On the server, replace deploy.sh steps 6–8 with "download the artifact + verify sha256 + untar" (via `gh run download` or an object-storage URL). **The point: P1 — what CI tested, packaged, and what runs in production are the same bytes.**
+On the server, replace deploy.sh steps 6–8 with "download the artifact + verify sha256 + untar" (via `gh run download` or an object-storage URL). **The point: build once, deploy everywhere — what CI tested, packaged, and what runs in production are the same bytes.**
 
 ### 3.3 The three comparisons
 
-| # | Experiment | Server-build (v1) | CI-artifact (D1) |
+| # | Experiment | Server-build (v1) | CI-artifact |
 |---|---|---|---|
 | 1 | load test during deploy (as 3.1) | p99 degrades | **no degradation** (the server only untars) |
-| 2 | deploy with internet cut (C3) | `git fetch` fails immediately; **but rollback.sh still works** (it never touches the network, P9) | once the artifact has arrived, unpacking needs no network — but the transfer channel itself does. **Common ground: rollback is always offline-capable** |
+| 2 | deploy with internet cut | `git fetch` fails immediately; **but rollback.sh still works** (it never touches the network) | once the artifact has arrived, unpacking needs no network — but the transfer channel itself does. **Common ground: rollback is always offline-capable** |
 | 3 | reproducibility | build the same SHA twice, `sha256` **differs** (`dist/version.json` contains `buildTime`!) | same; fix by dropping `buildTime` or pinning `SOURCE_DATE_EPOCH` — afterwards identical checksums |
 
 **Observe 3, live**:
@@ -244,13 +244,13 @@ cd /srv/demo-app && sudo -u deploy bash -c \
 | infrastructure | zero | artifact storage + download credentials |
 | **switch when** | — | machines ≤2GB / multiple servers needing the same artifact / compliance (artifact archival) / flaky package registry |
 
-For a single-machine demo-app: **not switching is also a defensible call** (P13). Having run both experiments, it's your data-backed decision — not folklore.
+For a single-machine demo-app: **not switching is also a defensible call** (simplicity first). Having run both experiments, it's your data-backed decision — not folklore.
 
 ---
 
-## Chapter 4: Experiment D2 — Push (SSH) or Pull (Poll)
+## Chapter 4: Experiment — Push (SSH) or Pull (Poll)
 
-**Hypothesis** (H10): Push-SSH requires an inbound port 22, permanently exposed to scans and brute force; a Pull model (the server polls GitHub) can shrink the inbound surface to zero, at the cost of latency and failure visibility.
+**Hypothesis**: Push-SSH requires an inbound port 22, permanently exposed to scans and brute force; a Pull model (the server polls GitHub) can shrink the inbound surface to zero, at the cost of latency and failure visibility.
 
 ### 4.1 First, look at what port 22 sees
 
@@ -320,9 +320,9 @@ Once enabled: `sudo ufw delete allow OpenSSH` (or restrict to your IP range) —
 
 ---
 
-## Chapter 5: Trust and Credentials — D4, H1, A3/A4
+## Chapter 5: Trust and Credentials — Key Lifetimes and Trust Boundaries
 
-### 5.1 D4: the blast radius of static keys → short-lived SSH certificates
+### 5.1 The blast radius of static keys → short-lived SSH certificates
 
 **Hypothesis**: the CI private key is long-lived and static; if leaked, the exposure is "trigger a deploy of any main SHA". Short-lived certificates compress the key's validity from "forever" to "minutes".
 
@@ -333,7 +333,7 @@ Once enabled: `sudo ufw delete allow OpenSSH` (or restrict to your IP range) —
 sudo ssh-keygen -t ed25519 -f /etc/ssh/democa
 # 2. make sshd trust certificates signed by this CA (/etc/ssh/sshd_config.d/ca.conf):
 #      TrustedUserCAKeys /etc/ssh/democa.pub
-#    keep the existing authorized_keys as fallback (P8: add the new trust before removing the old)
+#    keep the existing authorized_keys as fallback (don't lock yourself out: add the new trust before removing the old)
 sudo systemctl reload ssh
 # 3. on each deploy, CI mints a 5-minute certificate on the fly:
 #    -O clear -O force-command=... is critical: certificate auth does NOT read
@@ -347,20 +347,20 @@ ssh -i key -o CertificateFile=key-cert.pub deploy@host "deploy <sha>"
 
 **Observe**: 5 minutes later, the same key is refused (`Permission denied`). The blast radius shrinks from "forever" to "any legitimate SHA within 5 minutes" — provided `force-command` is present too: **validity governs how long, the forced command governs what**. Either alone is insufficient (a short-lived cert without force-command is still a full-shell pass).
 
-**Verdict**: for a single small project, static key + forced command + audit already keeps the radius tiny (P13: running a CA costs more than it saves); **multi-machine / multi-team / compliance** is where certificates (or OIDC-issued dynamic credentials) start paying. Triggers: keys shared into >3 CI repos, or any suspected leak, ever.
+**Verdict**: for a single small project, static key + forced command + audit already keeps the radius tiny (simplicity first: running a CA costs more than it saves); **multi-machine / multi-team / compliance** is where certificates (or OIDC-issued dynamic credentials) start paying. Triggers: keys shared into >3 CI repos, or any suspected leak, ever.
 
-### 5.2 H1: TOCTOU — the builder and the runner are different people
+### 5.2 TOCTOU — the builder and the runner are different people
 
-**Hypothesis** (H1): releases are built by the deploy user and executed by the app user. Between "build finished" and "service restarted", can the deploy user (or an attacker holding that identity) tamper with the code about to run?
+**Hypothesis**: releases are built by the deploy user and executed by the app user. Between "build finished" and "service restarted", can the deploy user (or an attacker holding that identity) tamper with the code about to run?
 
 **Steps** (lab machine):
 1. Start a deploy and, before its health check passes, simulate tampering: `sudo -u deploy sh -c 'echo "process.exit(99)" >> /srv/demo-app/releases/<sha>/dist/server.js'`
 2. Watch the outcome: the health check fails → rollback. The tampering **never reached production**, but note: **this release is now poisoned, and v1 has no mechanism to notice that release contents no longer match the SHA.**
 3. The fix: after building, `chown -R root:root` the release and make it read-only (deploy hands off write access the moment the build ends); have the migration wrapper verify ownership before `runuser`. Apply the hardening, rerun 1–2: tampering dies on EPERM.
 
-**Verdict**: H1 **confirmed** (the window exists in v1); the fix = "drop privileges immediately after building". Related residual risk: `pnpm install` postinstall scripts execute as deploy (A3) and can read the deploy key inside repo.git — minimal mitigation: keep the key read-only and easy to rotate; the real fix is CI-built artifacts (Chapter 3 — the server never runs a package manager at all).
+**Verdict**: the suspicion is **confirmed** (the window exists in v1); the fix = "drop privileges immediately after building". Related residual risk: `pnpm install` postinstall scripts execute as deploy, which opens the malicious-build door — a package could read the deploy key inside repo.git. Minimal mitigation: keep the key read-only and easy to rotate; the real fix is CI-built artifacts (Chapter 3 — the server never runs a package manager at all).
 
-### 5.3 A4: boundary inputs against the sudoers glob
+### 5.3 Boundary inputs against the sudoers glob
 
 Use the intermediate book's sudoers as the target range:
 
@@ -378,7 +378,7 @@ sudo -u deploy sudo /opt/demo-app/bin/migrate-wrapper.sh "../../../../etc/passwd
 
 ## Chapter 6: Data, Advanced — expand/contract, Big-Table Locks, Measured RPO/RTO
 
-### 6.1 The correct shape of a destructive migration (P2/D4)
+### 6.1 The correct shape of a destructive migration
 
 **Hypothesis**: a contract operation like "drop the `notes.body` column", deployed in one shot, breaks rollback (the old code still SELECTs the column). A two-phase release keeps every rollback safe.
 
@@ -387,7 +387,7 @@ sudo -u deploy sudo /opt/demo-app/bin/migrate-wrapper.sh "../../../../etc/passwd
 ```bash
 # drop the column + deploy → then manually rollback.sh to the old code
 # old code SELECTs body → ERROR: column "body" of relation "notes" does not exist → 500s
-# you have just manufactured the textbook "rollback-unsafe" case (P2)
+# you have just manufactured the textbook "rollback-unsafe" case
 ```
 
 **The right way — split 003 into two releases**:
@@ -408,7 +408,7 @@ Release 2 (contract): only after confirming you'll never roll back further
 |---|---|---|---|
 | Result | ✅ compatible (the point of expand) | ✅ compatible (the point of dual-write) | ❌ crashes (hence: confirm no further rollback before contracting) |
 
-### 6.2 Big-table migration locks (D5)
+### 6.2 Big-table migration locks
 
 **Steps**:
 1. Create a 500k-row table: `INSERT INTO notes(title) SELECT 'row'||g FROM generate_series(1,500000) g;`
@@ -427,7 +427,7 @@ CREATE INDEX CONCURRENTLY idx_fast ON notes(created_at); -- writes continue
 
 **Verdict**: the production migration trio — `lock_timeout`, `CONCURRENTLY`, off-peak execution; and any time you're unsure "does this migration lock?", **dry-run it on a replica first** (next item).
 
-### 6.3 Migration dry-runs (D7)
+### 6.3 Migration dry-runs
 
 ```bash
 # 1. restore a scratch database from the newest backup (Intermediate Ch.6's procedure)
@@ -439,7 +439,7 @@ DATABASE_URL=postgres://drill:drill@127.0.0.1:55432/drill node dist/migrate.js
 
 Wiring "rehearse on a restored copy before every migration" into deploy.sh (enabled when `MIGRATE_DRYRUN=true`) is standard practice at many larger teams.
 
-### 6.4 The measured RPO/RTO table (P5 deliverable)
+### 6.4 The measured RPO/RTO table (the drilled-backups deliverable)
 
 Complete this table on your lab machine (the numbers are yours; the format is universal):
 
@@ -453,15 +453,15 @@ Complete this table on your lab machine (the numbers are yours; the format is un
 | RPO (with hourly archive/WAL) | worst case 1h | Chapter 9's upgrade trigger |
 | Off-site copy lag | ___ | the rsync cron's interval |
 
-**GitLab's 2017 lesson** (the origin of P5) wasn't "no backups" — it was **never-verified restores**. The moment this table is filled in, your backups can be said to exist.
+**GitLab's 2017 lesson** wasn't "no backups" — it was **never-verified restores**. The moment this table is filled in, your backups can be said to exist.
 
 ---
 
-## Chapter 7: The Crash-Consistency Lab (B6/B7/C4/C5/E8/F2)
+## Chapter 7: The Crash-Consistency Lab
 
 In this chapter you are a QA engineer with malicious intent. Every experiment's acceptance bar is the same sentence: **recover automatically, or land in an explicitly recoverable state; never leave debris, never corrupt production.**
 
-### 7.1 kill -9 mid-deploy (B6)
+### 7.1 kill -9 mid-deploy
 
 For each of five moments: during build / after backup / mid-migration / post-migration pre-switch / during health check.
 
@@ -481,11 +481,11 @@ sudo kill -9 <pid>
 | post-migration pre-switch | DB new, code old (safe during expand) | ✅ |
 | during health check | current flipped but unconfirmed | ✅ idempotency/health checks converge |
 
-### 7.2 Reboot mid-everything (B7/F3)
+### 7.2 Reboot mid-everything
 
 Deploy running, then `sudo reboot` (mid-migration is the most exciting moment). After boot: Postgres back, units active, the flock lock (in /run, tmpfs) evaporated, `/srv/demo-app/current` pointing at a consistent state. Debris anywhere? Trigger one deploy and watch it converge.
 
-### 7.3 Disk nearly full (C5)
+### 7.3 Disk nearly full
 
 ```bash
 sudo fallocate -l $(( ($(df --output=avail -BM / | tail -1 | tr -dc 0-9) - 300))M /tmp/bigfile
@@ -494,7 +494,7 @@ sudo fallocate -l $(( ($(df --output=avail -BM / | tail -1 | tr -dc 0-9) - 300))
 sudo rm /tmp/bigfile
 ```
 
-### 7.4 The deploy freeze (E8)
+### 7.4 The deploy freeze
 
 ```bash
 sudo touch /opt/demo-app/freeze
@@ -503,12 +503,12 @@ sudo rm /opt/demo-app/freeze
 # both refusals are visible in audit.log
 ```
 
-### 7.5 Script drift detection (H11/F2)
+### 7.5 Script drift detection
 
 **Hypothesis**: you changed deploy.sh in the repo but forgot to reinstall; the server keeps running the old script, and **nothing notices**.
 
 ```bash
-# verify: add a comment line in the repo, push, don't reinstall → behavior unchanged (old script) → H11 confirmed
+# verify: add a comment line in the repo, push, don't reinstall → behavior unchanged (old script) → drift confirmed
 # fix: reconcile in one pipeline — hash the INSTALLED files in /opt, then verify the REPO copies by name
 # (note: the manifest must be checked against the repo directory; verifying /opt against itself always passes)
 cd ~/demo-app-bootstrap/deploy && \
@@ -517,11 +517,11 @@ sudo sh -c 'cd /opt/demo-app/bin && sha256sum app.conf deploy-entry deploy.sh he
   | sha256sum -c - || echo "DRIFT: installed scripts differ from repo — run install.sh"
 ```
 
-**Verdict**: drift detection is P12 in miniature ("the scripts that should be installed" vs "the scripts that are installed" must be comparable). When upgrading install.sh, update the fingerprint file with it (it's part of what gets reconciled).
+**Verdict**: drift detection is desired-state reconciliation in miniature ("the scripts that should be installed" vs "the scripts that are installed" must be comparable). When upgrading install.sh, update the fingerprint file with it (it's part of what gets reconciled).
 
 ---
 
-## Chapter 8: Observability and Reconciliation (P10/P12)
+## Chapter 8: Observability and Reconciliation
 
 ### 8.1 Desired-state reconciliation
 
@@ -555,9 +555,9 @@ curl -fsS -m 3 "$NOTIFY_WEBHOOK" -d "deploy failed: sha=$SHA step=$step" >/dev/n
 # NOTIFY_WEBHOOK → Slack/Lark/Telegram incoming webhook, or a local file service
 ```
 
-> Note the `|| true`: a failed notification must never fail the deployment itself (P13: notifications are a side channel, not the path).
+> Note the `|| true`: a failed notification must never fail the deployment itself (notifications are a side channel, not the path).
 
-### 8.3 Change control for the deploy system itself (P11/F6)
+### 8.3 Change control for the deploy system itself
 
 Deploy scripts, sudoers, and workflows are high-risk files that can change production behavior:
 
@@ -583,14 +583,14 @@ Deploy scripts, sudoers, and workflows are high-risk files that can change produ
 
 ## Chapter 9: The Upgrade Decision Records (ADRs)
 
-One-line verdicts plus quantified triggers per decision. **If the trigger isn't met, don't adopt** (P13 in practice).
+One-line verdicts plus quantified triggers per decision. **If the trigger isn't met, don't adopt** (simplicity first, in practice).
 
 | Decision | Trigger (any one) | Until then |
 |---|---|---|
-| **CI-built artifacts** (D1) | machines ≤2GB / ≥2 servers / compliance archival | server-side build (v1 as-is) |
-| **Pull-based deploys** (D2) | ≥2 machines / "no inbound SSH" compliance / brute-force noise out of control | Push-SSH + fail2ban + forced command |
-| **Blue-green** (D3) | a public SLA / users complained about the window | atomic switch + off-peak deploys |
-| **Short-lived certs / OIDC** (D4) | keys for >3 consumers / any suspected leak / multi-team CI | static key + audit + a fast-rotation plan |
+| **CI-built artifacts** | machines ≤2GB / ≥2 servers / compliance archival | server-side build (v1 as-is) |
+| **Pull-based deploys** | ≥2 machines / "no inbound SSH" compliance / brute-force noise out of control | Push-SSH + fail2ban + forced command |
+| **Blue-green** | a public SLA / users complained about the window | atomic switch + off-peak deploys |
+| **Short-lived certs / OIDC** | keys for >3 consumers / any suspected leak / multi-team CI | static key + audit + a fast-rotation plan |
 | **Daily → hourly backups / WAL archiving** | a 24h RPO is unacceptable (transactions/user data) | daily + pre-deploy |
 | **Off-site backups to object storage** (rclone cron → S3/R2) | **immediately** (cost ≈ free; benefit = the fire scenario) | rsync to a laptop (the minimum) |
 | **Ansible** | you've copy-pasted the same manual ops onto >5 machines | this course's install.sh |
@@ -604,71 +604,69 @@ One-line verdicts plus quantified triggers per decision. **If the trigger isn't 
 
 ## Chapter 10: The Scenario Matrix Workbook
 
-> **Numbering disambiguation**: throughout the books, a bare **D1–D4 refers to the decision axes** from design-doc §4 (build location / trigger channel / switch method / credentials); entries of the scenario matrix's D group are always written as "**scenario D3**", "**scenario D4**" (data & migrations).
-
-The full matrix from the design document, section 7. ✅=done in the beginner/intermediate books; 🧪=exercise in this chapter (hints included); ⭐=layer-2 items needing real public infrastructure (with the method documented).
+The full scenario matrix. ✅=done in the beginner/intermediate books; 🧪=exercise in this chapter (hints included); ⭐=layer-2 items needing real public infrastructure (with the method documented).
 
 ### A: Permissions & Trust
 
-| # | Scenario | Status / hint |
-|---|---|---|
-| A1 | forced-command abuse matrix | ✅ intermediate 3.5 |
-| A2 | deploy escalation (edit keys/scripts, read env, sudo off-whitelist) | ✅ intermediate 3.5/4; add: try `sudo -u deploy vi /opt/demo-app/bin/deploy.sh` |
-| A3 | malicious build (postinstall privesc / secret exfil) | 🧪 add `"postinstall": "cat /home/deploy/.ssh/id_ed25519"` to package.json → push → check whether the build log leaks the key (it will! → residual risk; fix = CI builds or `pnpm install --ignore-scripts`) |
-| A4 | TOCTOU + glob boundaries | ✅ advanced 5.2/5.3 |
-| A5 | host-key mismatch must fail the deploy | 🧪 change one character in the GitHub Secret's host key → deploy instantly dies with `REMOTE HOST IDENTIFICATION HAS CHANGED` |
-| A6 | no secrets in logs | 🧪 `grep -r PASSWORD /var/log/demo-app/` must come up empty (including failed builds) |
-| A7 | the sshd lockout drill | Appendix B |
+| Scenario | Status / hint |
+|---|---|
+| forced-command abuse matrix | ✅ intermediate 3.5 |
+| deploy escalation (edit keys/scripts, read env, sudo off-whitelist) | ✅ intermediate 3.5/4; add: try `sudo -u deploy vi /opt/demo-app/bin/deploy.sh` |
+| malicious build (postinstall privesc / secret exfil) | 🧪 add `"postinstall": "cat /home/deploy/.ssh/id_ed25519"` to package.json → push → check whether the build log leaks the key (it will! → residual risk; fix = CI builds or `pnpm install --ignore-scripts`) |
+| TOCTOU + glob boundaries | ✅ advanced 5.2/5.3 |
+| host-key mismatch must fail the deploy | 🧪 change one character in the GitHub Secret's host key → deploy instantly dies with `REMOTE HOST IDENTIFICATION HAS CHANGED` |
+| no secrets in logs | 🧪 `grep -r PASSWORD /var/log/demo-app/` must come up empty (including failed builds) |
+| the sshd lockout drill | Appendix B |
 
 ### B: Provenance, Concurrency, Crash Consistency
 
-| # | Scenario | Status |
-|---|---|---|
-| B1 | force-pushed SHA refused | ✅ intermediate 3.5 (the all-zeros SHA) |
-| B2 | skip-older / idempotency | ✅ intermediate 9.8 |
-| B3 | flock + workflow concurrency, divided labor | ✅ intermediate 7.1/9.8 |
-| B4 | three rapid pushes, queue behavior | ⭐ real Actions observation: older queued runs get replaced (H5); runner timeout while the server continues (✅ 9.8 already verified) |
-| B5 | disconnect mid-deploy, server completes | ✅ intermediate 9.8 |
-| B6 | kill -9 at five moments | ✅ advanced 7.1 |
-| B7 | full reboot mid-deploy | ✅ advanced 7.2 |
+| Scenario | Status |
+|---|---|
+| force-pushed SHA refused | ✅ intermediate 3.5 (the all-zeros SHA) |
+| skip-older / idempotency | ✅ intermediate 9.8 |
+| flock + workflow concurrency, divided labor | ✅ intermediate 7.1/9.8 |
+| three rapid pushes, queue behavior | ⭐ real Actions observation: older queued runs get replaced (a CI-status-vs-reality quirk); runner timeout while the server continues (✅ 9.8 already verified) |
+| disconnect mid-deploy, server completes | ✅ intermediate 9.8 |
+| kill -9 at five moments | ✅ advanced 7.1 |
+| full reboot mid-deploy | ✅ advanced 7.2 |
 
 ### C: Build & Toolchain
 
-C1/C2 ✅ (intermediate 9); C3 offline deploy & rollback ✅ (advanced 3.3); C4 build-time load/OOM ✅ (advanced 3.1); C5 disk pressure ✅ (advanced 7.3); C6 postinstall 🧪 (= A3).
+Bad builds and toolchain mismatches ✅ (intermediate 9); offline deploy & rollback ✅ (advanced 3.3); build-time load/OOM ✅ (advanced 3.1); disk pressure ✅ (advanced 7.3); malicious postinstall scripts 🧪 (same drill as the malicious-build item in Permissions & Trust).
 
 ### D: Data & Migrations
 
-D1 backup + restore drill ✅; D2 backup scope & retention ✅ (intermediate 6); D3 failed migration = no switch ✅ (intermediate 9.4); D4 the rollback matrix ✅ (advanced 6.1); D5 big-table locks ✅ (advanced 6.2); D6 concurrent migrators ✅ (intermediate 7.4); D7 dry-runs ✅ (advanced 6.3).
+Backup + restore drill ✅; backup scope & retention ✅ (intermediate 6); failed migration = no switch ✅ (intermediate 9.4); the rollback-safety matrix ✅ (advanced 6.1); big-table locks ✅ (advanced 6.2); concurrent migrators ✅ (intermediate 7.4); migration dry-runs ✅ (advanced 6.3).
 
 ### E: Switching, Health, Rollback
 
-E1 window quantified ✅ (advanced 2.1); E2 false-positive health ✅ (intermediate 9.6); E3 partial unit failure → 🧪 `systemctl stop demo-app-worker` then run healthcheck.sh → expect `unit:demo-app-worker=inactive`; E4 ✅ (intermediate 9.5); E5 rollback target also unhealthy → 🧪 break both versions (e.g. make the old release depend on a missing runtime.env variable?), confirm the system reports "human needed" rather than success; E6 ✅ (intermediate 9.7); E7 timed rollback → ✅ (the runbook's number); E8 freeze ✅ (advanced 7.4).
+Downtime window quantified ✅ (advanced 2.1); false-positive health ✅ (intermediate 9.6); partial unit failure → 🧪 `systemctl stop demo-app-worker` then run healthcheck.sh → expect `unit:demo-app-worker=inactive`; a version that migrates fine but won't boot ✅ (intermediate 9.5); rollback target also unhealthy → 🧪 break both versions (e.g. make the old release depend on a missing runtime.env variable?), confirm the system reports "human needed" rather than success; missing config caught before the switch ✅ (intermediate 9.7); timed rollback ✅ (the runbook's number); deploy freeze ✅ (advanced 7.4).
 
 ### F: Bootstrap, Operations, Portability
 
-F1 first-deploy timing from an empty server ✅ (intermediate 2.3 — record your minutes); F2 drift ✅ (advanced 7.5); F3 reboot recovery ✅ (advanced 7.2); F4 audit/notify/reconcile ✅ (advanced 8); F5 retention policy 🧪 deploy 7 times → `ls releases` shows 5, and the previous version was never deleted; F6 CODEOWNERS + self-check CI ✅ (advanced 8.3).
+First-deploy timing from an empty server ✅ (intermediate 2.3 — record your minutes); script drift ✅ (advanced 7.5); reboot recovery ✅ (advanced 7.2); audit/notify/reconcile ✅ (advanced 8); retention policy 🧪 deploy 7 times → `ls releases` shows 5, and the previous version was never deleted; CODEOWNERS + self-check CI ✅ (advanced 8.3).
 
-### The H1–H11 final verdicts
+### The hypothesis verdicts
 
 | Hypothesis | Verdict | Evidence | Fix |
 |---|---|---|---|
-| H1 TOCTOU | **confirmed** | advanced 5.2 | post-build privilege drop to root read-only / CI builds |
-| H2 backup scope & retention | **confirmed** | intermediate 6 | DB+storage; count+time retention |
-| H3 false-positive health | **confirmed** | intermediate 9.6 | assert SHA + heartbeat + soak |
-| H4 restart window | **confirmed** | advanced 2.1 | blue-green (2.2) |
-| H5 concurrency/timeout behavior | **partially confirmed** | ⭐B4 / intermediate 9.8 | setsid detachment + honest reporting of state divergence |
-| H6 missing config found too late | **confirmed → fixed** | intermediate 9.7 | check-config preflight |
-| H7 build-on-prod costs | **confirmed** | advanced 3.1/3.3 | the D1 decision table |
-| H8 rollback impossible via redeploy | **confirmed → fixed** | intermediate 7.2 | rollback.sh (E7) |
-| H9 missing logs/audit/switch | **confirmed → fixed** | intermediate 7.6/10 | audit.log, log rotation, freeze |
-| H10 SSH exposure | **confirmed** | advanced 4.1 | fail2ban / certs / pull (D2) |
-| H11 script drift undetected | **confirmed → fixed** | advanced 7.5 | fingerprint reconciliation |
+| TOCTOU (the builder and the runner are different people) | **confirmed** | advanced 5.2 | post-build privilege drop to root read-only / CI builds |
+| backup scope & retention | **confirmed** | intermediate 6 | DB+storage; count+time retention |
+| false-positive health | **confirmed** | intermediate 9.6 | assert SHA + heartbeat + soak |
+| restart window | **confirmed** | advanced 2.1 | blue-green (2.2) |
+| concurrency/timeout behavior | **partially confirmed** | ⭐ the three-rapid-pushes drill (above) / intermediate 9.8 | setsid detachment + honest reporting of state divergence |
+| missing config found too late | **confirmed → fixed** | intermediate 9.7 | check-config preflight |
+| build-on-prod costs | **confirmed** | advanced 3.1/3.3 | the build-location decision table (Chapter 9) |
+| rollback impossible via redeploy | **confirmed → fixed** | intermediate 7.2 | rollback.sh |
+| missing logs/audit/switch | **confirmed → fixed** | intermediate 7.6/10 | audit.log, log rotation, freeze |
+| SSH exposure | **confirmed** | advanced 4.1 | fail2ban / short-lived certificates / pull-based deploys |
+| script drift undetected | **confirmed → fixed** | advanced 7.5 | fingerprint reconciliation |
 
 ---
 
 ## Chapter 11: The Portability Proof — a Second Stack (Go)
 
-> Goal: prove the template is **actually** portable, not merely claimed portable (design doc success criterion #3). 30 minutes.
+> Goal: prove the template is **actually** portable, not merely claimed portable (one of this course's success criteria). 30 minutes.
 
 **[local]** `# file: ~/Projects/demo-go/main.go` (40 lines, zero dependencies):
 
@@ -748,7 +746,7 @@ Emergency flip-back: manually point nginx's upstream at the old port + reload
 Provider console VNC → mount/fix → restore sshd_config → sshd -t → reload
 ```
 
-## Appendix B: The Lockout Drill (A7/P8)
+## Appendix B: The Lockout Drill
 
 **On your lab machine**, deliberately break sshd and practice recovery (once drilled, panic never):
 
@@ -761,7 +759,7 @@ sudo sshd -t && sudo systemctl restart ssh     # syntactically "valid" — but 2
 #   sudo cp /tmp/sshd_config.bak /etc/ssh/sshd_config && sudo sshd -t && sudo systemctl restart ssh
 ```
 
-**The standing rule**: for any sshd/sudoers/ufw change, follow the five steps — back up first → `sshd -t` / `visudo -cf` → **reload** (not restart) → keep the existing session open → verify with a **new** session. Those five steps are all of P8.
+**The standing rule**: for any sshd/sudoers/ufw change, follow the five steps — back up first → `sshd -t` / `visudo -cf` → **reload** (not restart) → keep the existing session open → verify with a **new** session. Those five steps are the whole don't-lock-yourself-out playbook.
 
 ## Appendix C: The "Layer 2 Unverified" List
 
@@ -769,14 +767,14 @@ This course verified almost everything on a real VPS + real Actions. These items
 
 | Item | Why unverified | How to verify |
 |---|---|---|
-| H5's exact queue-replacement behavior | needs consecutive real Actions runs | push 3 commits rapidly; watch the Actions list |
+| The exact queue-replacement behavior of concurrent deploys | needs consecutive real Actions runs | push 3 commits rapidly; watch the Actions list |
 | multi-machine blue-green / rolling | single machine | repeat the slot experiment on machine #2 |
 | fully automated short-lived-cert issuance | needs a CA-key custody design | store the CA in Actions secrets, or use OIDC |
 | WAL archiving with RPO=1h | needs archive storage | postgres `archive_command` + object storage |
 
 ### Simulating CI → SSH deploys on a local VM (closes the loop from Beginner Appendix B)
 
-Play the GitHub Actions runner from your host machine (differences from the real thing: no CI conclusion gate (`needs: check`), and the queueing/cancel behavior (H5) can't be reproduced):
+Play the GitHub Actions runner from your host machine (differences from the real thing: no CI conclusion gate (`needs: check`), and the queueing/cancel behavior can't be reproduced):
 
 ```bash
 # pin the host key (this stands in for DEPLOY_KNOWN_HOSTS in the real chain)

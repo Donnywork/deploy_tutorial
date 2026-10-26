@@ -29,16 +29,16 @@ esac
 [ "${#SHA}" -eq 40 ] || die 65 arg "sha must be 40 hex chars (got ${#SHA})"
 log "=== deploy $SHA start ==="
 
-# ---------- 1. 紧急开关(E8)----------
+# ---------- 1. 紧急开关 ----------
 [ ! -e "$FREEZE_FILE" ] || die 70 freeze "deploys frozen: $FREEZE_FILE exists"
 
-# ---------- 2. 串行锁(B3)----------
+# ---------- 2. 串行锁 ----------
 # workflow 的 concurrency 是第一道防线,这道 flock 是第二道:
 # 覆盖手动触发、workflow 排队行为差异、以及卡死的 runner。
 exec 9>"$LOCK_FILE"
 flock -n 9 || die 75 lock "another deploy is running (holds $LOCK_FILE)"
 
-# ---------- 3. 幂等:该 SHA 已在线且健康 → 直接成功(B2)----------
+# ---------- 3. 幂等:该 SHA 已在线且健康 → 直接成功 ----------
 CURRENT=""
 [ -L "$SRV_ROOT/current" ] && CURRENT=$(basename "$(readlink "$SRV_ROOT/current")")
 if [ "$CURRENT" = "$SHA" ]; then
@@ -50,7 +50,7 @@ if [ "$CURRENT" = "$SHA" ]; then
   log "sha is current but unhealthy — will redeploy it"
 fi
 
-# ---------- 4. fetch + "必须是 main 的祖先"(B1)----------
+# ---------- 4. fetch + "必须是 main 的祖先" ----------
 log "fetching origin/main ..."
 git --git-dir="$REPO_CACHE" fetch --prune -q origin \
   || die 11 fetch "git fetch failed (network? deploy key?)"
@@ -58,7 +58,7 @@ if ! git --git-dir="$REPO_CACHE" merge-base --is-ancestor "$SHA" refs/heads/main
   die 12 verify "SHA is not an ancestor of origin/main — rejected (force-push? wrong branch?)"
 fi
 
-# ---------- 5. 比线上旧 → 跳过(B2;回滚请用 rollback.sh,H8/E7)----------
+# ---------- 5. 比线上旧 → 跳过(回滚请用 rollback.sh)----------
 if [ -n "$CURRENT" ] && [ "$CURRENT" != "$SHA" ]; then
   case "$CURRENT" in
     *[!0-9a-f]*) ;;
@@ -71,7 +71,7 @@ if [ -n "$CURRENT" ] && [ "$CURRENT" != "$SHA" ]; then
   esac
 fi
 
-# ---------- 6. 预检(C2/C5)----------
+# ---------- 6. 预检(磁盘 / Node 版本 / lockfile)----------
 avail_kb=$(df -Pk "$SRV_ROOT" | awk 'NR==2{print $4}')
 [ "$avail_kb" -gt 1048576 ] || die 13 preflight "less than 1 GiB free under $SRV_ROOT"
 # 以"目标提交里的 .node-version"为准(参考设计),没有该文件才退回 app.conf
@@ -83,9 +83,9 @@ node_major=$(node --version | sed 's/^v\([0-9]*\).*/\1/')
 [ "$node_major" = "$want_major" ] \
   || die 14 preflight "server Node major=$node_major, .node-version wants=$want_major"
 git --git-dir="$REPO_CACHE" show "$SHA":pnpm-lock.yaml >/dev/null 2>&1 \
-  || die 15 preflight "commit has no pnpm-lock.yaml (C2: lockfile discipline)"
+  || die 15 preflight "commit has no pnpm-lock.yaml (lockfile discipline)"
 
-# ---------- 7. 导出精确提交 → 以 deploy 身份构建(C1)----------
+# ---------- 7. 导出精确提交 → 以 deploy 身份构建 ----------
 PARTIAL="$SRV_ROOT/.partial"
 rm -rf "$PARTIAL"
 mkdir -p "$PARTIAL"
@@ -105,17 +105,17 @@ mv "$PARTIAL" "$SRV_ROOT/releases/$SHA"
 rm -rf "$SRV_ROOT/releases/$SHA.old.$$"
 log "release created: releases/$SHA"
 
-# ---------- 9. 配置预检:以 service 用户 + 真实 runtime.env(E6/H6)----------
+# ---------- 9. 配置预检:以 service 用户 + 真实 runtime.env ----------
 if ! sudo -n /opt/demo-app/bin/check-config.sh "$SHA"; then
   die 22 check-config "new release would crash on missing env — kept current release"
 fi
 
-# ---------- 10. 迁移前备份(P5:备份失败就绝不碰数据库)----------
+# ---------- 10. 迁移前备份(备份失败就绝不碰数据库)----------
 log "pre-migration backup ..."
 sudo -n /opt/demo-app/bin/backup.sh premigrate \
   || die 24 backup "pre-migration backup failed — refusing to migrate"
 
-# ---------- 11. 迁移(advisory lock;失败则代码不切换,D3)----------
+# ---------- 11. 迁移(advisory lock;失败则代码不切换)----------
 log "migrating (releases/$SHA/dist/migrate.js) ..."
 sudo -n /opt/demo-app/bin/migrate-wrapper.sh "$SHA" \
   || die 26 migrate "migration failed — code NOT switched, live still on ${CURRENT:-nothing}"
@@ -128,7 +128,7 @@ log "current -> releases/$SHA"
 # ---------- 13. 重启单元 ----------
 sudo -n systemctl restart $UNITS || die 28 restart "systemctl restart failed"
 
-# ---------- 14. 健康检查(断言 SHA + DB 读写 + worker 心跳 + soak,P3/P4)----------
+# ---------- 14. 健康检查(断言 SHA + DB 读写 + worker 心跳 + soak)----------
 if ! sudo -n /opt/demo-app/bin/healthcheck.sh "$SHA"; then
   log "health check FAILED — rolling back to ${CURRENT:-(none)}"
   if [ -n "$CURRENT" ]; then
@@ -145,7 +145,7 @@ if ! sudo -n /opt/demo-app/bin/healthcheck.sh "$SHA"; then
   fi
 fi
 
-# ---------- 15. 保留策略(F5:永不删 current、上一版、以及部署前的 current)----------
+# ---------- 15. 保留策略(永不删 current、上一版、以及部署前的 current)----------
 # 说明:$CURRENT 是"部署前线上跑的版本"——手动 rollback 后它未必是 mtime 最新,
 # 但它是刚被人工验证过的退路,绝不能被 prune 掉。
 prev=$(ls -1t "$SRV_ROOT/releases" | sed -n '2p')
@@ -157,7 +157,7 @@ ls -1t "$SRV_ROOT/releases" | tail -n +"$((KEEP_RELEASES + 1))" | while read -r 
   log "pruned old release $r"
 done
 
-# ---------- 16. 审计 + 摘要(F4)----------
+# ---------- 16. 审计 + 摘要 ----------
 sudo -n /opt/demo-app/bin/audit.sh "$SHA" deploy ok "$(( $(date +%s) - START_TS ))"
 log "=== deploy $SHA OK in $(( $(date +%s) - START_TS ))s ==="
 

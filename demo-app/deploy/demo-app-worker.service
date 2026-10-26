@@ -1,6 +1,6 @@
 # /etc/systemd/system/demo-app-worker.service — worker 单元(中级版)
 # 教学点:
-# - worker 与 web 是两个独立单元:健康检查必须覆盖全部单元(P3/P4)
+# - worker 与 web 是两个独立单元:健康检查必须覆盖全部单元
 # - worker 的 SIGTERM 优雅退出 = 处理完手头任务再走(至少一次语义)
 [Unit]
 Description=demo-app worker (release-based)

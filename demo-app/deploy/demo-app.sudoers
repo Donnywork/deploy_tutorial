@@ -1,7 +1,7 @@
-# /etc/sudoers.d/demo-app — deploy 用户的最小权限白名单(P7)。
+# /etc/sudoers.d/demo-app — deploy 用户的最小权限白名单。
 # 规则:改完必须 `sudo visudo -cf /etc/sudoers.d/demo-app` 通过才算完。
 # 注意 migrate-wrapper/check-config/healthcheck 的参数 glob 只是第一层
-# 防御(A4):脚本内部还会再验一次参数,纵深防御。
+# 防御:脚本内部还会再验一次参数,纵深防御。
 
 deploy ALL=(root) NOPASSWD: /opt/demo-app/bin/backup.sh premigrate, \
     /opt/demo-app/bin/backup.sh daily, \

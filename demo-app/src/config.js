@@ -1,6 +1,6 @@
 // config.js — 配置的单一事实来源 + `--check-config` 预检入口。
 //
-// 部署教学点(H6/P3):"新版本需要的配置缺失"必须在**切换前**被发现,
+// 部署教学点:"新版本需要的配置缺失"必须在**切换前**被发现,
 // 而不是切换后进程起不来才靠回滚兜底。部署脚本会在切换前以 service
 // 用户身份运行 `node dist/config.js --check-config`,缺变量就拒绝部署。
 import { readFileSync, realpathSync } from 'node:fs'

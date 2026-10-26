@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# audit.sh <sha> <action> <result> <duration-s> — 部署审计(F4/P10):
+# audit.sh <sha> <action> <result> <duration-s> — 部署审计:
 # 谁、何时、对哪个 SHA、做了什么、结果如何。一行一条,好 grep 好归档。
 # 残余风险(两层):deploy 用户能调用本脚本伪造/注水条目(sudoers 放行了它);
 # /var/log/demo-app 目录归 deploy 属主,它还能删改 audit.log(含 symlink 变体)。

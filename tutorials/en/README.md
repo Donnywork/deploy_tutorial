@@ -21,7 +21,7 @@ Advanced: experiments, measurements, and upgrade decisions
 |---|---|---|---|
 | Beginner | [01-beginner.md](01-beginner.md) | A hardened VPS: systemd service, Nginx reverse proxy, HTTPS, daily backups + a restore drill, a naive deploy script | SSH & keys, firewalls, systemd, reverse proxies, DNS/TLS, "an untested backup is no backup" |
 | Intermediate | [02-intermediate.md](02-intermediate.md) | A full deploy pipeline: GitHub Actions → SSH forced command → atomic switch → health checks → auto-rollback | Least privilege, atomicity, release/rollback as first-class citizens, health checks that assert versions |
-| Advanced | [03-advanced.md](03-advanced.md) | Blue-green switching, CI-built artifacts, a pull-based prototype, short-lived SSH certs, measured RPO/RTO | When reliability investments are worth it — and when they are not (P13) |
+| Advanced | [03-advanced.md](03-advanced.md) | Blue-green switching, CI-built artifacts, a pull-based prototype, short-lived SSH certs, measured RPO/RTO | When reliability investments are worth it — and when they are not |
 
 ## Conventions
 
@@ -52,5 +52,5 @@ This repository is **AI-ready**: open its root in any repo-aware AI assistant (C
 
 - **How much does it cost?** A minimal VPS is ~$4–6/month (destroyable when done); a domain ~$1–10/year. The advanced book's experiments suggest an hourly-billed box you delete afterwards.
 - **The demo app is Node. I use Python/Go/Java — will this help?** The deployment skeleton (users/directories/systemd/switching/health checks/rollback) is language-agnostic. Every book ends with a "port it to your own project" checklist; Advanced Book, Chapter 11 demonstrates a full port to a tiny Go app.
-- **Will this break my own server?** Destructive experiments only ever run on your lab server, with risks flagged. SSH/firewall chapters include a deliberate "lockout drill" (principle P8).
-- **How does this relate to `deploy-experiment-prompt.md`?** That document is the design source (an unverified deployment reference design + 13 industry principles). The course splits it into three levels; every hypothesis (H1–H11) and principle (P1–P13) is confirmed or fixed along the way — index in Advanced Book, Chapter 10.
+- **Will this break my own server?** Destructive experiments only ever run on your lab server, with risks flagged. SSH/firewall chapters include a deliberate "lockout drill" so a real lockout never happens to you.
+- **Do I need to memorize any numbering or jargon?** No. Design trade-offs are always stated in plain language ("build once, deploy everywhere", "an untested backup is no backup") with the exact chapter that teaches each one. The course also states its assumptions up front — "backups probably have blind spots", "health checks can lie" — and then confirms or fixes every one of them with experiments; the verdicts are collected in Advanced Book, Chapter 10.

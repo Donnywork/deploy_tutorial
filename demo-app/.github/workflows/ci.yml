@@ -3,7 +3,7 @@
 # - 部署 job `needs: check`:CI 不过就不部署(参考设计的触发条件)
 # - workflow_dispatch 也只允许 main(deploy job 的 if 里强制)
 # - concurrency cancel-in-progress: false —— 不取消进行中的部署;
-#   排队行为的高级讨论(H5)见高级册
+#   排队行为的高级讨论见高级册
 name: ci
 
 on:
@@ -43,7 +43,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    timeout-minutes: 20   # H5:超过 20 分钟 CI 判失败,但服务器侧部署仍在跑(setsid)
+    timeout-minutes: 20   # 超过 20 分钟 CI 判失败,但服务器侧部署仍在跑(setsid)
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -59,6 +59,6 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           install -m 600 /dev/stdin ~/.ssh/id_ed25519 <<<"$KEY"
-          # A5:StrictHostKeyChecking=yes + 固定 host key = 服务器被替换/中间人时部署直接失败
+          # StrictHostKeyChecking=yes + 固定 host key = 服务器被替换/中间人时部署直接失败
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
               -i ~/.ssh/id_ed25519 "deploy@$HOST" "deploy $SHA"

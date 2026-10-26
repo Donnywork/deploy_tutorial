@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # backup.sh [daily|premigrate|manual] — root 持有。
-# 备份范围 = 数据库 + 文件存储目录(H2 修正:文件存储不在备份里 = 迟早丢数据)。
-# 保留策略(修正 H2 的"只按次数"):每类保留最近 N 份,**且 7 天内的一律保留**
+# 备份范围 = 数据库 + 文件存储目录(文件存储不在备份里 = 迟早丢数据)。
+# 保留策略(不只按次数):每类保留最近 N 份,**且 7 天内的一律保留**
 # —— 部署频繁时也不会把历史挤光。
-# 但请记住 P5:没有做过恢复演练的备份等于没有。恢复步骤见中级册第 6 章。
+# 但请记住:没有做过恢复演练的备份等于没有。恢复步骤见中级册第 6 章。
 set -euo pipefail
 . /opt/demo-app/bin/app.conf
 
@@ -20,7 +20,7 @@ db_out="$BACKUP_DIR/db/${KIND}-${STAMP}.dump"
 st_out="$BACKUP_DIR/storage/${KIND}-${STAMP}.tar.gz"
 
 # -Fc:pg_dump 的 custom 格式,支持 pg_restore 选择性恢复、压缩
-# (失败即删半截文件:半份备份比没有更危险——它会挤占保留名额,P5)
+# (失败即删半截文件:半份备份比没有更危险——它会挤占保留名额)
 docker exec "$DB_CONTAINER" pg_dump -U "$DB_USER" --format=custom "$DB_NAME" > "$db_out" \
   || { rm -f "$db_out"; echo "backup: pg_dump failed" >&2; exit 1; }
 chmod 600 "$db_out"

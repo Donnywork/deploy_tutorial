@@ -1,9 +1,9 @@
 // server.js — demo-app 的 web 单元。
 //
 // 部署教学点:
-// - /health/live  vs /health/ready 的分层:进程活着 ≠ 依赖可用(P3)。
+// - /health/live  vs /health/ready 的分层:进程活着 ≠ 依赖可用。
 // - /version 返回构建时注入的 SHA:部署后健康检查要**断言**新版本真的在线,
-//   而不是"端口通了就行"(P3/P4,E2 场景)。
+//   而不是"端口通了就行"。
 // - 只监听 127.0.0.1:由 Nginx 反代对外,应用端口永远不暴露公网。
 // - SIGTERM 优雅退出:systemd restart 时先停止接新请求、处理完在途请求再退出。
 import express from 'express'
@@ -93,7 +93,7 @@ app.get('/api/jobs/:id', wrap(async (req, res) => {
   res.json(r.rows[0])
 }))
 
-// 文件存储:验证"备份范围必须包含文件存储,而不只是数据库"(P5/H2)
+// 文件存储:验证"备份范围必须包含文件存储,而不只是数据库"
 const SAFE_NAME = /^[A-Za-z0-9._-]+$/
 app.post('/api/files', wrap(async (req, res) => {
   const name = typeof req.body?.name === 'string' ? req.body.name : ''

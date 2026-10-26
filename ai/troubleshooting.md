@@ -24,7 +24,7 @@
 ### T-03 `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!`
 - 阶段:任意
 - 两种语境,务必区分:
-  a) **预期保护生效(A5)**:服务器重装过/换了机器 → 指纹本来就变了。确认不是被攻击后,【本地】`ssh-keygen -R IP` 清掉旧记录再连;若是 CI 里报这个,更新 GitHub Secret `DEPLOY_KNOWN_HOSTS`。
+  a) **预期保护生效(host key 固定)**:服务器重装过/换了机器 → 指纹本来就变了。确认不是被攻击后,【本地】`ssh-keygen -R IP` 清掉旧记录再连;若是 CI 里报这个,更新 GitHub Secret `DEPLOY_KNOWN_HOSTS`。
   b) **意外变化**:你没动过机器 → 不要盲目清记录!先在厂商控制台核对,警惕中间人。
 - 修复:见上;CI 侧永远更新 Secret 而不是关掉 StrictHostKeyChecking。
 - 关联:中级 3.5/8.1、高级附录 A。
@@ -33,7 +33,7 @@
 - 阶段:B1(高风险操作)
 - 排查:走厂商控制台 VNC(带外通道)。
 - 修复(VNC 内):`sudo cp 备份 /etc/ssh/sshd_config && sudo sshd -t && sudo systemctl restart ssh`;ufw:`sudo ufw allow OpenSSH`。
-- 预防:P8 五步——改前备份 → `sshd -t`/`visudo -cf` → **reload 不 restart** → 老会话保持 → 新会话验证。高级附录 B 有完整演练。
+- 预防:防锁死五步——改前备份 → `sshd -t`/`visudo -cf` → **reload 不 restart** → 老会话保持 → 新会话验证。高级附录 B 有完整演练。
 - 关联:初级 1.4 ⚠️ 框、高级附录 B。
 
 ---
@@ -79,7 +79,7 @@
 ### T-10 Node 版本与 `.node-version` 不一致
 - 阶段:B3(手动)/ I7(部署预检拒绝,退出码 14)
 - 修复:重装对应主版本(NodeSource),或改仓库 `.node-version`(提交)。
-- 关联:初级 3.2、中级 7.3(C2)、剧本 3。
+- 关联:初级 3.2、中级 7.3、剧本 3。
 
 ### T-11 `pnpm install --frozen-lockfile` 失败(LOCKFILE mismatch / up to date check)
 - 阶段:B2/I7
@@ -111,7 +111,7 @@
 
 ### T-15 服务崩溃循环后变 `failed`,不再自动重启
 - 阶段:B4/I5
-- 说明:这是 systemd 的 start-limit(默认 5 次)——**特性不是 bug**:崩溃循环不该被无限掩盖(P3 的 soak 窗口就是为抓它)。
+- 说明:这是 systemd 的 start-limit(默认 5 次)——**特性不是 bug**:崩溃循环不该被无限掩盖(健康检查的 soak 稳定窗口就是为抓它)。
 - 排查:`journalctl -u xxx -n 50` 看第一次崩溃的原因(重点看最早那几条,不是最后)。
 - 修复:修根因后 `sudo systemctl reset-failed xxx && sudo systemctl restart xxx`。
 - 关联:中级第 5 章、剧本 6。
@@ -155,17 +155,17 @@
 
 ### T-21 `deploy-entry: refused: only 'deploy <sha>' is allowed`
 - 阶段:I3/I8
-- 说明:强制命令在正常工作(A1)。发给服务器的命令不是 `deploy <40位sha>` 这个精确格式。
+- 说明:强制命令在正常工作。发给服务器的命令不是 `deploy <40位sha>` 这个精确格式。
 - 排查:看 Actions 的 ssh 命令拼装;手动测试用:`ssh -i key deploy@host "deploy <完整40位sha>"`。
 - 关联:中级 3.3/3.5。
 
 ### T-22 `FAILED step=verify: SHA is not an ancestor of origin/main`(退出码 12)
 - 阶段:I7/I8
-- 原因:SHA 不在服务器 fetch 到的 main 历史上——force-push 顶掉的提交、其他分支、没推上去的提交(B1 防线)。
+- 原因:SHA 不在服务器 fetch 到的 main 历史上——force-push 顶掉的提交、其他分支、没推上去的提交。
 - 排查(一次一步):【服务器】`sudo -u deploy git --git-dir=/srv/demo-app/repo.git log --oneline -3 refs/heads/main` 对照。
-- 关联:中级 7.2、场景 B1。
+- 关联:中级 7.2。
 
-### T-23 Actions 报 `REMOTE HOST IDENTIFICATION HAS CHANGED`(A5)
+### T-23 Actions 报 `REMOTE HOST IDENTIFICATION HAS CHANGED`
 - 阶段:I8
 - 原因:GitHub Secret `DEPLOY_KNOWN_HOSTS` 与服务器当前指纹不一致(换过机器/重装/中间人)。
 - 修复:【本地】重新 `ssh-keyscan -t ed25519 IP`,更新 Secret。**绝不要**在 ssh 命令里关 StrictHostKeyChecking。
@@ -173,7 +173,7 @@
 
 ### T-24 "Actions 红了但服务器其实部署成功" / "Actions 绿了但线上没变"
 - 阶段:I8+
-- 原因:前者 = CI 超时/被取消,但 setsid 让服务器侧部署继续跑完(H5/B5,**设计使然**);后者 = 幂等跳过(同 SHA 已在线,B2)或 skip-older(B2)。
+- 原因:前者 = CI 超时/被取消,但 setsid 让服务器侧部署继续跑完(**设计使然**);后者 = 幂等跳过(同 SHA 已在线)或 skip-older。
 - 钦定验证:【服务器】`curl -s localhost:3000/version` 与 `sudo tail -3 /var/log/demo-app/audit.log`——**以服务器侧为准**。
 - 关联:中级 7.1/7.2、剧本 8。
 
@@ -187,11 +187,11 @@
 - 阶段:I7
 - 原因:网络 / deploy key 失效或没配 / 仓库搬家。
 - 排查:【服务器】`sudo -u deploy ssh -T git@github.com`(应返回 "successfully authenticated" 只读身份);`sudo -u deploy git --git-dir=/srv/demo-app/repo.git remote -v`。
-- 关联:中级 3.4、C3。
+- 关联:中级 3.4、高级 3.3(断网部署)。
 
 ### T-27 健康检查 `worker-heartbeat=XXs` 超龄
 - 阶段:I7/I9
-- 含义:web 正常但 worker 心跳停了(E2 的经典假阳性,健康检查正在保护你)。
+- 含义:web 正常但 worker 心跳停了(经典假阳性,健康检查正在保护你)。
 - 排查:`systemctl status demo-app-worker` + `journalctl -u demo-app-worker -n 50`;常见:worker 崩溃循环(T-15)或迁移后代码 bug。
 - 关联:中级 7.5、剧本 6。
 
@@ -199,7 +199,7 @@
 - 阶段:I7
 - 含义:`/version` 返回的不是刚部署的 SHA——旧进程还在应答/切换没生效/新进程没起来。
 - 排查:1) `readlink /srv/demo-app/current` 是否指向新 release;2) `curl -s localhost:3000/version`;3) `journalctl -u demo-app-web -n 50`。
-- 关联:中级 7.5、E2/E3。
+- 关联:中级 7.5(健康检查假阳性与部分单元失败的排查)。
 
 ---
 
@@ -225,13 +225,13 @@
 - 阶段:任意
 - 排查顺序:`df -h` → 找大头的:`sudo du -sh /var/log/* /var/backups/* 2>/dev/null | sort -h | tail`。
 - 常见清理:`journalctl --vacuum-size=200M`;旧备份按保留策略清;Docker:`docker system df`。
-- 预防:部署预检已有 1GiB 下限(C5);备份的保留策略就是为此设计。
+- 预防:部署预检已有 1GiB 下限;备份的保留策略就是为此设计。
 - 关联:初级附录 D、中级 7.3、高级 7.3。
 
 ### T-32 部署时进程被 OOM 杀掉(构建失败,线上无恙)
 - 阶段:I7(成)/ A3(专门实验)
-- 说明:`.partial` 隔离让构建 OOM 不影响线上(C1+C4 的加分项)。`journalctl -k | grep -i oom` 留证据。
-- 高级册 3.1 会专门量化;解法方向:换 CI 构建(D1)或加内存/加 swap。
+- 说明:`.partial` 隔离让构建 OOM 不影响线上。`journalctl -k | grep -i oom` 留证据。
+- 高级册 3.1 会专门量化;解法方向:换 CI 构建或加内存/加 swap。
 - 关联:高级 3.1/3.3。
 
 ---
@@ -246,4 +246,4 @@
 4. **资源层**:`df -h`、`free -m`、`uptime`
 5. **最近变更**:"出问题前最后一次改了什么?"——回滚它(中级以上:有 rollback.sh 就先回滚止血再查)
 
-> 提醒 AI:超出本库覆盖范围的问题,可以给通用 Linux/运维知识,但要明确标注"这超出了教程内容",并尽量映射回最接近的章节/原则编号。
+> 提醒 AI:超出本库覆盖范围的问题,可以给通用 Linux/运维知识,但要明确标注"这超出了教程内容",并尽量映射回最接近的教程章节。

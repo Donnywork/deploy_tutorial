@@ -9,7 +9,7 @@
 >
 > **What you don't need**: any ops experience. Every concept is explained the first time it appears.
 
-**Principles in this book** (from the [design document](../../deploy-experiment-prompt.md)'s 13 industry principles; chapters flag which apply): P5 an untested backup is no backup, P8 don't lock yourself out, P13 simplicity first.
+**Principles in this book**: an untested backup is no backup; don't lock yourself out; simplicity first. Chapters flag which apply.
 
 **Conventions**:
 - **[local]** = run in a terminal on your own computer; **[server]** = SSH into the server first, then run.
@@ -81,7 +81,7 @@ ED25519 key fingerprint is SHA256:xxxxxxx...
 Are you sure you want to continue connecting (yes/no/[fingerprint])?
 ```
 
-> **What is this**: the server presents its "fingerprint" and asks "memorize it?". This is TOFU (Trust On First Use). The proper move is to compare against the fingerprint shown in your provider's console before typing yes — the intermediate book covers why a **changed** fingerprint must hard-fail a deployment (P7/A5). Seed planted.
+> **What is this**: the server presents its "fingerprint" and asks "memorize it?". This is TOFU (Trust On First Use). The proper move is to compare against the fingerprint shown in your provider's console before typing yes — the intermediate book covers why a **changed** fingerprint must hard-fail a deployment (the deploy channel pins the host key; a mismatch kills the connection). Seed planted.
 
 Type `yes`. When the prompt becomes `root@ubuntu:~#`, you're in. **Do not close this window** — it's your lifeline in section 1.4.
 
@@ -99,7 +99,7 @@ apt install -y unattended-upgrades && dpkg-reconfigure -f noninteractive unatten
 
 ### 1.4 Create a daily user, disable root login
 
-Working as root all day is dangerous (one slip = a machine-wide incident; principle P7 starts with yourself). Create a user `sam`:
+Working as root all day is dangerous (one slip = a machine-wide incident; least privilege starts with yourself). Create a user `sam`:
 
 **[server]**:
 
@@ -134,7 +134,7 @@ sudo sshd -t && echo CONFIG_OK     # syntax check — only proceed on CONFIG_OK!
 sudo systemctl reload ssh
 ```
 
-> ⚠️ **P8: don't lock yourself out.** These three lines are the classic source of lockout stories worldwide. Three safety nets:
+> ⚠️ **Don't lock yourself out.** These three lines are the classic source of lockout stories worldwide. Three safety nets:
 > 1. `sshd -t` only validates syntax; a failed check means `reload` never runs;
 > 2. `reload` (not `restart`) doesn't kill existing connections — your root window stays alive;
 > 3. While the old window stays connected, test a **new** login. If truly locked out, the provider's web console (VNC) is your out-of-band channel — go find it in the console *now*, so you're not hunting for it during an incident.
@@ -189,7 +189,7 @@ pnpm install               # first install; also generates pnpm-lock.yaml
 git add -A && git commit -m "demo-app v1: web + worker + migrations"
 ```
 
-> **Why commit `pnpm-lock.yaml`**: it pins the exact version of every dependency. On the server, `pnpm install --frozen-lockfile` installs precisely the same versions — otherwise the classic "works on my machine" tragedy strikes (the intermediate book rehearses this as scenario C2).
+> **Why commit `pnpm-lock.yaml`**: it pins the exact version of every dependency. On the server, `pnpm install --frozen-lockfile` installs precisely the same versions — otherwise the classic "works on my machine" tragedy strikes (the intermediate book rehearses this in its bad-commit drills).
 
 The app looks like this (skim for now; every file is under 50 lines):
 
@@ -304,11 +304,11 @@ sudo npm install -g pnpm@11
 pnpm -v
 ```
 
-> The repo carries a `.node-version` file saying `24.22.1`. The intermediate book's deploy script checks "server's Node major == the major declared in the repo" — version drift is the other big source of "works locally, breaks in prod" (scenario C2). Also note: on 2026-10-21 Node.js fixed 10 CVEs (including an RCE-capable Brotli decoder flaw) — **always pin to a version that carries the latest security patches** (that release was 22.23.4 for the 22 line; this course uses the Active LTS 24.22.1).
+> The repo carries a `.node-version` file saying `24.22.1`. The intermediate book's deploy script checks "server's Node major == the major declared in the repo" — version drift is the other big source of "works locally, breaks in prod" (the intermediate book's bad-commit drills include a wrong-Node-version rehearsal). Also note: on 2026-10-21 Node.js fixed 10 CVEs (including an RCE-capable Brotli decoder flaw) — **always pin to a version that carries the latest security patches** (that release was 22.23.4 for the 22 line; this course uses the Active LTS 24.22.1).
 
 ### 3.3 A dedicated user for the app, and getting the code
 
-Don't run the app as sam, and definitely not as root. Create a dedicated `app` user (P7: if the app is compromised, the attacker gets exactly this unprivileged identity):
+Don't run the app as sam, and definitely not as root. Create a dedicated `app` user (least privilege: if the app is compromised, the attacker gets exactly this unprivileged identity):
 
 ```bash
 sudo useradd --system --create-home --shell /bin/bash app
@@ -435,7 +435,7 @@ Read it line by line (writing your own service later is just editing these lines
 | Line | Meaning |
 |---|---|
 | `Wants=/After=` | Start after network and Docker (the database runs in Docker) |
-| `User=app` | Run as the unprivileged app user, not root (P7) |
+| `User=app` | Run as the unprivileged app user, not root (least privilege) |
 | `EnvironmentFile=` | Load these environment variables before starting (that 0640 file) |
 | `ExecStart=` | The command to run — **must be an absolute path** |
 | `Restart=always` | Always restart on crash/OOM |
@@ -562,9 +562,9 @@ curl -sI https://deploy-demo.example.com | head -3
 
 ---
 
-## Chapter 6: Backups and a Restore Drill (P5: An Untested Backup Is No Backup)
+## Chapter 6: Backups and a Restore Drill (An Untested Backup Is No Backup)
 
-> This chapter comes from a painful principle (P5): in GitLab's 2017 data-loss incident, **every one** of their backup mechanisms turned out to be broken. So the deliverable here is not "a backup script" but "a backup script I have personally restored from".
+> This chapter comes from a painful principle — an untested backup is no backup: in GitLab's 2017 data-loss incident, **every one** of their backup mechanisms turned out to be broken. So the deliverable here is not "a backup script" but "a backup script I have personally restored from".
 
 ### 6.1 Write the backup script
 
@@ -593,7 +593,7 @@ ls -lh "$DEST/db" | tail -3
 
 Two points:
 - `pg_dump --format=custom` produces a compressed binary backup, restored with `pg_restore`, with selective table restore supported;
-- **The backup must include `/srv/demo-app/storage`** (file storage). Backing up only the database is P5's most classic blind spot: the database is pristine while all user-uploaded files are gone.
+- **The backup must include `/srv/demo-app/storage`** (file storage). Backing up only the database is the most classic blind spot of "an untested backup is no backup": the database is pristine while all user-uploaded files are gone.
 
 ```bash
 chmod +x ~/backup-naive.sh && ~/backup-naive.sh
@@ -731,7 +731,7 @@ while true; do
 done
 ```
 
-**[server]** run `~/deploy-naive.sh` in another terminal; watch the local output. You'll see some `000 ...s` or `FAIL` lines — that's "the site is down" from the user's perspective. **Note the duration of consecutive failures** (typically hundreds of ms to a few seconds). The intermediate book makes the switch atomic; the advanced book's D3 experiment squeezes it toward zero with blue-green.
+**[server]** run `~/deploy-naive.sh` in another terminal; watch the local output. You'll see some `000 ...s` or `FAIL` lines — that's "the site is down" from the user's perspective. **Note the duration of consecutive failures** (typically hundreds of ms to a few seconds). The intermediate book makes the switch atomic; the advanced book's blue-green experiment squeezes it toward zero.
 
 **🧪 Sin #2: building on the production machine.** `pnpm install` + `build` run on the box serving users: they steal CPU/RAM (visibly hurting latency on small machines), and **with no internet there is no deployment**. Try it (your origin is the SSH form, which uses port 22 — block both; your existing SSH session survives, because OUTPUT rules only block *new* outbound connections):
 
@@ -747,13 +747,13 @@ sudo iptables -D OUTPUT -p tcp --dport 443 -j DROP
 
 **🧪 Sin #4: no health check.** The script declares victory when it finishes. Did the new version start? Is `/health/ready` green? Nobody knows. In the real world, versions that crash within 30 seconds of restart (OOM, missing env) are everywhere.
 
-**🧪 Sin #5: rollback by adrenaline.** New version down? `git reset` + rebuild + restart, all in a panic — and the old version may already be gone. **Rollback should be as convenient as deploy** (intermediate book, E7).
+**🧪 Sin #5: rollback by adrenaline.** New version down? `git reset` + rebuild + restart, all in a panic — and the old version may already be gone. **Rollback should be as convenient as deploy** (the intermediate book ships a one-command `rollback.sh`).
 
-**🧪 Sin #6: excessive privileges.** The script runs as sam with full sudo. Deploy logic needs exactly: restart one service, run one migration, make one backup. P7 says shrink to those.
+**🧪 Sin #6: excessive privileges.** The script runs as sam with full sudo. Deploy logic needs exactly: restart one service, run one migration, make one backup. Least privilege says shrink to those.
 
-**🧪 Sin #7: no records.** Who deployed what, when, with what outcome? Today the answer is "grep shell history" (P10 auditability).
+**🧪 Sin #7: no records.** Who deployed what, when, with what outcome? Today the answer is "grep shell history" — there is no audit trail.
 
-**🧪 Sin #8: the code/migration skew window.** The order is `migrate → restart`: between migration completing and new code starting, you're running **old code against the new schema**. Additive migrations usually survive; destructive ones kill the old code on the spot (P2). The correct pattern (expand/contract) is advanced book Chapter 6.
+**🧪 Sin #8: the code/migration skew window.** The order is `migrate → restart`: between migration completing and new code starting, you're running **old code against the new schema**. Additive migrations usually survive; destructive ones kill the old code on the spot — a rollback-safety killer. The correct pattern (expand/contract) is advanced book Chapter 6.
 
 ### 7.4 Beginner book wrap-up
 
@@ -762,7 +762,7 @@ You now have a **daily-usable** go-live process — and an honest list of its fl
 | Sin | The intermediate fix |
 |---|---|
 | #1 downtime window | `releases/<sha>` directories + atomic `current` symlink switch |
-| #2 building in prod | kept for now; the advanced book's D1 experiment decides with data |
+| #2 building in prod | kept for now; the advanced book's build-location experiment decides with data |
 | #3 half-done states | build into `.partial`; promote to a release only after everything succeeds |
 | #4 no health check | assert `/version` == target SHA + real DB read/write + worker heartbeat + soak window |
 | #5 rollback by adrenaline | `rollback.sh`: a first-class command, no internet required |
@@ -807,7 +807,7 @@ The skeleton is universal. Walk this table per project:
 | The "build" command (`pnpm run build`) | anything producing a runnable artifact (`go build`, `mvn package`...) |
 | The database (containerized Postgres) | MySQL/SQLite is a compose-file and connection-string swap; no DB → drop the migrate steps |
 | systemd unit | the `ExecStart` line; Java → `java -jar app.jar`, Python → `.venv/bin/gunicorn ...` |
-| Backup script | `pg_dump` → `mysqldump`/file snapshots; **keep the storage backup** (P5) |
+| Backup script | `pg_dump` → `mysqldump`/file snapshots; **keep the storage backup** |
 | `/health/ready` | strongly recommended for your app too: check key dependencies + real read/write |
 
 ## Appendix D: Common Errors Quick Reference

@@ -4,7 +4,7 @@
 # authorized_keys 里写死 command="/opt/demo-app/bin/deploy-entry",
 # 所以 SSH 进来只能执行本文件;本文件只接受一种输入:
 #     deploy <40位小写十六进制SHA>
-# 其他一切(短 SHA、非十六进制、多参数、scp、端口转发、交互 shell)都拒绝(A1)。
+# 其他一切(短 SHA、非十六进制、多参数、scp、端口转发、交互 shell)都拒绝。
 set -eu
 
 fail() { rc=$1; shift; echo "deploy-entry: $*" >&2; exit "$rc"; }
@@ -25,14 +25,14 @@ esac
 . /opt/demo-app/bin/app.conf
 mkdir -p "$LOG_DIR"
 
-# 日志保留最近 20 份(H9 的最低限度修正)
+# 日志保留最近 20 份(最低限度的留痕,方便事后追查)
 ls -1t "$LOG_DIR"/deploy-*.log 2>/dev/null | tail -n +20 | xargs -r rm -f
 LOG="$LOG_DIR/deploy-$(date -u +%Y%m%dT%H%M%S)_$$.log"
 touch "$LOG" && chmod 640 "$LOG"
 
 logger -t deploy-entry "accepted sha=$sha from=${SSH_CONNECTION:-local}"
 
-# 关键设计(B5):部署进程用 setsid 脱离 SSH 会话 —— CI 断线/超时,
+# 关键设计:部署进程用 setsid 脱离 SSH 会话 —— CI 断线/超时,
 # 服务器上的部署照跑不误。SSH 客户端只通过 tail "跟随"日志。
 setsid /opt/demo-app/bin/deploy.sh "$sha" >"$LOG" 2>&1 </dev/null &
 pid=$!

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# rollback.sh [sha] — 一等公民回滚(E7/H8 修正)。管理员手动 sudo 运行。
+# rollback.sh [sha] — 一等公民回滚。管理员手动 sudo 运行。
 #
 # 三条铁律:
-#   1. 不依赖外网:不 fetch、不 install —— GitHub 挂了也要能回滚(P9/C3)
-#   2. 绝不动数据库:迁移不自动回滚(P2);数据库兼容性靠 expand/contract 保证
+#   1. 不依赖外网:不 fetch、不 install —— GitHub 挂了也要能回滚
+#   2. 绝不动数据库:迁移不自动回滚;数据库兼容性靠 expand/contract 保证
 #   3. 有专门命令,不是"手动改软链":可计时、可演练、可审计
 set -euo pipefail
 . /opt/demo-app/bin/app.conf
 
-# 与部署互斥(B3):部署进行中不允许回滚,否则会互相覆盖 current、互相 restart
+# 与部署互斥:部署进行中不允许回滚,否则会互相覆盖 current、互相 restart
 exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "rollback: a deploy holds $LOCK_FILE — refusing to race it" >&2; exit 75; }
 

@@ -2,7 +2,7 @@
 //
 // 部署教学点:
 // - web 和 worker 是**两个 systemd 单元**:健康检查必须覆盖全部单元,
-//   否则"web 正常但 worker 崩溃循环"会被漏检(H3/E2 场景)。
+//   否则"web 正常但 worker 崩溃循环"会被漏检。
 // - 心跳表 worker_status:健康检查据此判断 worker 真的在干活。
 // - SIGTERM 优雅退出:systemd restart 时处理完手头任务再走。
 // - 至少一次 + 幂等:任务可能被重复执行(比如 worker 中途被杀后重新入队),
@@ -102,7 +102,7 @@ async function main() {
 
 function infraFail(err) {
   // 基础设施错误(连不上库等):干脆地退出,让 systemd 拉起;
-  // 崩溃循环会被健康检查的心跳超时抓出来(而不是被自动重启掩盖,P3)。
+  // 崩溃循环会被健康检查的心跳超时抓出来(而不是被自动重启掩盖)。
   console.error('worker: infra failure:', err.message)
   process.exit(1)
 }

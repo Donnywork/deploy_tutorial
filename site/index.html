@@ -252,7 +252,7 @@
       <p class="sub" data-zh="每个结论都有你自己的数据,包括「什么时候不上 K8s」。" data-en="Every conclusion backed by your own data — including when NOT to adopt K8s."></p>
       <ul>
         <li data-zh="蓝绿切换:把停机窗口压到 ≈0ms 并实测" data-en="Blue-green: squeeze the downtime window to ≈0ms, measured"></li>
-        <li data-zh="D1 在哪构建 / D2 Push vs Pull / D4 短期证书" data-en="D1 where to build / D2 push vs pull / D4 short-lived certs"></li>
+        <li data-zh="在哪构建 / Push vs Pull / 短期证书" data-en="Where to build / push vs pull / short-lived certs"></li>
         <li data-zh="expand/contract 两阶段迁移与回滚安全矩阵" data-en="expand/contract two-phase migrations + rollback-safety matrix"></li>
         <li data-zh="kill -9 实验室:五个时点制造事故看系统自愈" data-en="kill -9 lab: break things at five moments, watch self-healing"></li>
         <li data-zh="RPO/RTO 实测表 + 升级决策记录(ADR)" data-en="Measured RPO/RTO tables + upgrade decision records"></li>
@@ -303,31 +303,31 @@
 </section>
 
 <section id="coverage">
-  <p class="kicker" data-zh="设计源头与覆盖" data-en="Design source &amp; coverage"></p>
+  <p class="kicker" data-zh="原则、假设与覆盖" data-en="Principles, hypotheses &amp; coverage"></p>
   <h2 data-zh="不是拍脑袋:每条结论都对应一个可复现实验" data-en="Nothing hand-wavy: every claim maps to a reproducible experiment"></h2>
-  <p data-zh="课程源自一份「未验证的部署参考设计 + 13 条业界原则」。三级教程把它的 11 条假设逐一证实或修正,全部留证。" data-en="The course derives from an unverified reference design + 13 industry principles. Across three levels, its 11 hypotheses are each confirmed or fixed — with evidence."></p>
+  <p data-zh="课程围绕 13 条业界原则与 11 条假设组织,三级教程把每条假设逐一证实或修正,全部留证。" data-en="The course is organized around 13 industry principles and 11 hypotheses. Across three levels, every hypothesis is confirmed or fixed — with evidence."></p>
 
   <div class="hlist">
-    <span class="hitem"><b>H1</b>TOCTOU<span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H2</b><span data-zh="备份范围与保留策略" data-en="backup scope &amp; retention"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H3</b><span data-zh="健康检查假阳性" data-en="false-positive health"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H4</b><span data-zh="重启窗口" data-en="restart window"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H5</b><span data-zh="并发/超时行为" data-en="concurrency/timeout"></span><span class="pill fix" data-zh="部分证实" data-en="partially"></span></span>
-    <span class="hitem"><b>H6</b><span data-zh="缺配置事后发现" data-en="late config discovery"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H7</b><span data-zh="生产机构建代价" data-en="build-on-prod cost"></span><span class="pill fix" data-zh="证实" data-en="confirmed"></span></span>
-    <span class="hitem"><b>H8</b><span data-zh="回滚非一等公民" data-en="rollback not first-class"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H9</b><span data-zh="日志/审计缺失" data-en="no logs/audit"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
-    <span class="hitem"><b>H10</b><span data-zh="SSH 暴露面" data-en="SSH exposure"></span><span class="pill fix" data-zh="证实" data-en="confirmed"></span></span>
-    <span class="hitem"><b>H11</b><span data-zh="脚本漂移无检测" data-en="undetected script drift"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem">TOCTOU<span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="备份范围与保留策略" data-en="backup scope &amp; retention"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="健康检查假阳性" data-en="false-positive health"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="重启窗口" data-en="restart window"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="并发/超时行为" data-en="concurrency/timeout"></span><span class="pill fix" data-zh="部分证实" data-en="partially"></span></span>
+    <span class="hitem"><span data-zh="缺配置事后发现" data-en="late config discovery"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="生产机构建代价" data-en="build-on-prod cost"></span><span class="pill fix" data-zh="证实" data-en="confirmed"></span></span>
+    <span class="hitem"><span data-zh="回滚非一等公民" data-en="rollback not first-class"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="日志/审计缺失" data-en="no logs/audit"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><span data-zh="SSH 暴露面" data-en="SSH exposure"></span><span class="pill fix" data-zh="证实" data-en="confirmed"></span></span>
+    <span class="hitem"><span data-zh="脚本漂移无检测" data-en="undetected script drift"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
   </div>
 
-  <h3 data-zh="原始设计文档 → 教程位置" data-en="Design document → where it's taught"></h3>
+  <h3 data-zh="课程主线 → 教程位置" data-en="Course backbone → where it's taught"></h3>
   <div class="tablewrap"><table>
-    <thead><tr><th data-zh="原始设计内容" data-en="Design doc section"></th><th data-zh="教程位置" data-en="Taught in"></th></tr></thead>
+    <thead><tr><th data-zh="内容" data-en="Topic"></th><th data-zh="教程位置" data-en="Taught in"></th></tr></thead>
     <tbody>
       <tr><td data-zh="参考设计(强制命令/原子切换/健康检查/回滚)" data-en="Reference design (forced command / atomic switch / health / rollback)"></td><td><a data-path="/tutorials/zh/02-intermediate.md" href="#" data-zh="中级 第 2–7 章" data-en="Intermediate Ch.2–7"></a></td></tr>
-      <tr><td data-zh="D1 构建位置 / D2 触发通道 / D3 切换方式 / D4 凭证" data-en="D1 build location / D2 trigger / D3 switch / D4 credentials"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 2–5 章" data-en="Advanced Ch.2–5"></a></td></tr>
-      <tr><td data-zh="场景矩阵 A/B/C/D/E/F" data-en="Scenario matrix A/B/C/D/E/F"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="中级第 9 章(P0 剧场)+ 高级第 10 章(全表)" data-en="Intermediate Ch.9 (P0 drills) + Advanced Ch.10 (full matrix)"></a></td></tr>
+      <tr><td data-zh="构建位置 / 触发通道 / 切换方式 / 凭证" data-en="Build location / trigger / switch / credentials"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 2–5 章" data-en="Advanced Ch.2–5"></a></td></tr>
+      <tr><td data-zh="场景矩阵" data-en="Scenario matrix"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="中级第 9 章(坏提交剧场)+ 高级第 10 章(全表)" data-en="Intermediate Ch.9 (bad-commit drills) + Advanced Ch.10 (full matrix)"></a></td></tr>
       <tr><td data-zh="度量(耗时/窗口/RPO/RTO/迁移行数)" data-en="Metrics (durations / window / RPO / RTO / ported lines)"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 1、6 章 + 第 11 章迁移证明" data-en="Advanced Ch.1 &amp; 6 + porting proof in Ch.11"></a></td></tr>
       <tr><td data-zh="可迁移模板 + 第二技术栈" data-en="Portable template + a second stack"></td><td><code>demo-app/deploy/app.conf</code> + <a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 11 章(Go,实测 ~15 行改动)" data-en="Advanced Ch.11 (Go, ~15 lines measured)"></a></td></tr>
     </tbody>
@@ -345,11 +345,11 @@
     <div class="card">
       <h3 data-zh="端点即课程" data-en="Endpoints as coursework"></h3>
       <ul class="filelist">
-        <li><code>GET /health/ready</code><span data-zh=" — 真实读写数据库:端口通了 ≠ 正常(P3)" data-en=" — real DB read/write: an open port ≠ healthy (P3)"></span></li>
-        <li><code>GET /version</code><span data-zh=" — 返回构建 SHA:部署后断言新版本在线(P3/P4)" data-en=" — build SHA: assert the new version is live (P3/P4)"></span></li>
+        <li><code>GET /health/ready</code><span data-zh=" — 真实读写数据库:端口通了 ≠ 正常" data-en=" — real DB read/write: an open port ≠ healthy"></span></li>
+        <li><code>GET /version</code><span data-zh=" — 返回构建 SHA:部署后断言新版本在线" data-en=" — build SHA: assert the new version is live"></span></li>
         <li><code>POST /api/notes</code><span data-zh=" — 入队任务:worker 队列与至少一次语义" data-en=" — enqueues a job: worker queue &amp; at-least-once"></span></li>
-        <li><code>POST /api/files</code><span data-zh=" — 写文件存储:备份范围不只数据库(P5)" data-en=" — writes file storage: backups ≠ DB only (P5)"></span></li>
-        <li><code>--check-config</code><span data-zh=" — 配置预检:缺变量在切换前被拦(E6)" data-en=" — config preflight: missing env caught pre-switch (E6)"></span></li>
+        <li><code>POST /api/files</code><span data-zh=" — 写文件存储:备份范围不只数据库" data-en=" — writes file storage: backups ≠ DB only"></span></li>
+        <li><code>--check-config</code><span data-zh=" — 配置预检:缺变量在切换前被拦" data-en=" — config preflight: missing env caught pre-switch"></span></li>
       </ul>
     </div>
   </div>
@@ -404,8 +404,7 @@
   <div class="inner">
     <div>
       <b data-zh="部署实战教程" data-en="Deploy Tutorial"></b><br>
-      <span data-zh="设计源头:一份未验证的参考设计 + 13 条业界原则,全部被证实或修正。" data-en="Design source: an unverified reference design + 13 industry principles — all confirmed or fixed."></span><br>
-      <a data-path="/deploy-experiment-prompt.md" href="#" data-zh="阅读原始设计文档" data-en="Read the original design doc"></a>
+      <span data-zh="13 条业界原则 + 11 条假设,全部在课程中被证实或修正。" data-en="13 industry principles + 11 hypotheses — all confirmed or fixed in the course."></span><br>
     </div>
     <div>
       <b data-zh="延伸阅读" data-en="Further reading"></b><br>

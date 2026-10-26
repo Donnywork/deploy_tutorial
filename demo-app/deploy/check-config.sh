@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-config.sh <sha> — 以 service 用户身份、加载真实 runtime.env,
-# 运行该 release 的配置预检(E6/H6:缺配置必须在切换前被发现)。
+# 运行该 release 的配置预检(缺配置必须在切换前被发现)。
 # root 经 sudo 调用(deploy 用户在 sudoers 白名单里放行了本脚本)。
 set -euo pipefail
 . /opt/demo-app/bin/app.conf

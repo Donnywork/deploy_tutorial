@@ -10,7 +10,7 @@
 >
 > 如果某条不确定:对应内容都在[初级教程](01-beginner.md),先补那一章。
 >
-> **本册原则**:P2 回滚安全、P3 健康检查要断言版本、P4 不接受混合状态、P7 最小权限、P9 回滚是一等公民、P10 可审计。
+> **本册原则**:回滚安全、健康检查要断言版本、不接受混合状态、最小权限、回滚是一等公民、可审计。
 
 **本册产出**:一套完整可迁移的部署系统,全部脚本在仓库 `demo-app/deploy/` 下,服务器上落在 `/opt/demo-app/bin/`。换项目时通常只改一个 `app.conf`。
 
@@ -22,14 +22,14 @@
 
 | # | v0 的罪 | v1 的方案 | 对应原则 |
 |---|---|---|---|
-| 1 | 停机窗口不可控 | `releases/<sha>/` + `current` 软链,切换是原子操作;重启窗口是唯一残余(高级册 D3 消灭它) | P6 |
-| 2 | 生产机上装依赖、构建 | 保留(参考设计),但构建失败绝不留半成品;高级册 D1 用对比实验决策 | P1/P13 |
+| 1 | 停机窗口不可控 | `releases/<sha>/` + `current` 软链,切换是原子操作;重启窗口是唯一残余(高级册的蓝绿实验消灭它) | 控制爆炸半径 |
+| 2 | 生产机上装依赖、构建 | 保留(参考设计),但构建失败绝不留半成品;高级册"在哪儿构建"用对比实验决策 | 一次构建处处部署、简单优先 |
 | 3 | 半成品状态 | `.partial` 暂存目录,全部成功才 `mv` 成 release | — |
-| 4 | 没有健康检查 | 断言 `/version` == 目标 SHA + DB 真实读写 + worker 心跳新鲜度 + 30s soak 窗口 | P3/P4 |
-| 5 | 回滚靠手速 | `rollback.sh`:不依赖外网、不动数据库、可计时的一等命令 | P9 |
-| 6 | 部署脚本拥有整个 sudo | 独立 `deploy` 用户 + SSH 强制命令 + sudoers 白名单(能做的只有:重启固定单元/备份/迁移/健康检查/审计) | P7 |
-| 7 | 无记录 | `audit.log` + `logger`(syslog),每次操作一行 | P10 |
-| 8 | 迁移与代码错配 | 迁移失败 → 代码不切换;部署顺序:备份 → 迁移 → 切换;破坏性迁移用 expand/contract(高级册) | P2 |
+| 4 | 没有健康检查 | 断言 `/version` == 目标 SHA + DB 真实读写 + worker 心跳新鲜度 + 30s soak 窗口 | 健康检查要断言版本、不接受混合状态 |
+| 5 | 回滚靠手速 | `rollback.sh`:不依赖外网、不动数据库、可计时的一等命令 | 回滚是一等公民 |
+| 6 | 部署脚本拥有整个 sudo | 独立 `deploy` 用户 + SSH 强制命令 + sudoers 白名单(能做的只有:重启固定单元/备份/迁移/健康检查/审计) | 最小权限 |
+| 7 | 无记录 | `audit.log` + `logger`(syslog),每次操作一行 | 可审计 |
+| 8 | 迁移与代码错配 | 迁移失败 → 代码不切换;部署顺序:备份 → 迁移 → 切换;破坏性迁移用 expand/contract(高级册) | 回滚安全 |
 
 **v1 的部署流程全景**(记住这张图,后面每节都是它的一块):
 
@@ -66,7 +66,7 @@
 | `deploy` | CI 的化身 | 登录方式**只有** SSH 强制命令;构建 release;经 sudo 白名单执行 5 个动作 | 读 `runtime.env`、改脚本、开 shell、传文件 |
 | `app` | 服务本身 | 跑 web/worker、读 `runtime.env`、写 storage、连数据库 | 登录、改代码、碰部署脚本 |
 
-> **为什么这么分**(P7 最小权限):设想最坏情况——CI 的 SSH 私钥泄露。攻击者能做的只有"触发一次 main 上某个 SHA 的部署"和"刷白名单里的命令"。读不到数据库密码,改不了部署脚本(想部署恶意代码?SHA 必须是 main 的祖先,而 main 是受保护的)。爆炸半径被压到了最小。高级册 D4 会量化对比静态密钥 vs 短期证书。
+> **为什么这么分**(最小权限):设想最坏情况——CI 的 SSH 私钥泄露。攻击者能做的只有"触发一次 main 上某个 SHA 的部署"和"刷白名单里的命令"。读不到数据库密码,改不了部署脚本(想部署恶意代码?SHA 必须是 main 的祖先,而 main 是受保护的)。爆炸半径被压到了最小。高级册第 5 章会量化对比静态密钥 vs 短期证书。
 
 ### 2.2 目录布局
 
@@ -75,7 +75,7 @@
 ├── bin/                     #   部署脚本(deploy.sh、rollback.sh、backup.sh ...)
 ├── env/runtime.env          #   root:app 0640 —— 只有 app 读得到
 ├── compose/                 #   docker-compose.yml + .env(Postgres)
-└── freeze                   #   存在即拒绝部署(紧急开关,E8)
+└── freeze                   #   存在即拒绝部署(紧急开关)
 
 /srv/demo-app/               # "应用"的部分
 ├── repo.git/                #   bare 镜像缓存,deploy 用户持有(只读 deploy key)
@@ -122,7 +122,7 @@ docker exec demo-app-db psql -U demo_app -d demo_app -Atc "SELECT count(*) FROM 
 # 你在初级册造的数据条数 —— 数据没丢,搬家成功
 ```
 
-文件存储也要搬回来(它是备份范围的一等公民,P5;v0 的 storage 在旧目录里):
+文件存储也要搬回来(它是备份范围的一等公民;v0 的 storage 在旧目录里):
 
 ```bash
 sudo rm -rf /srv/demo-app/storage
@@ -130,7 +130,7 @@ sudo cp -a /srv/demo-app-v0-backup/storage /srv/demo-app/storage
 sudo chown -R app:app /srv/demo-app/storage
 ```
 
-> `install.sh` 是幂等的:已存在的东西不动。以后升级部署脚本本身就是"改仓库 → 重跑 install.sh"(F2 脚本漂移问题,高级册第 7 章会给它加自动检测)。
+> `install.sh` 是幂等的:已存在的东西不动。以后升级部署脚本本身就是"改仓库 → 重跑 install.sh"(脚本漂移问题,高级册第 7 章会给它加自动检测)。
 
 ✅ **检查点**:`ls -la /opt/demo-app/bin | head -5` 里所有文件 owner 都是 root;`sudo ls -la /opt/demo-app/env/` 里 `runtime.env` 是 `-rw-r----- root app`。
 
@@ -166,9 +166,9 @@ sudo chmod 0755 /home/deploy/.ssh && sudo chmod 0644 /home/deploy/.ssh/authorize
 
 1. **`restrict`**:关掉这把钥匙的一切"附加功能"——不能开终端(`-t` 失败)、不能端口转发(`-L/-R/-D` 失败)、不能 X11/agent 转发、不能碰 `SSH_ORIGINAL_COMMAND` 以外的东西。
 2. **`command="..."`**:不管客户端发什么命令,sshd 都强制执行这一个。客户端真正想跑的命令会放进环境变量 `SSH_ORIGINAL_COMMAND`,由 `deploy-entry` 自己裁决。
-3. **目录和文件都是 root 拥有**:deploy 用户(以及偷到 deploy 密码的任何人)**改不了自己的钥匙**。A2 场景我们会验证这一点。
+3. **目录和文件都是 root 拥有**:deploy 用户(以及偷到 deploy 密码的任何人)**改不了自己的钥匙**。接下来几节会动手验证这一点。
 
-> 这就是参考设计的"SSH 通知服务器"的安全形态:端口 22 必须对公网开着(高级册 D2 的 Pull 模式会把这道门整个关掉),但门后只有一个一厘米宽的缝。
+> 这就是参考设计的"SSH 通知服务器"的安全形态:端口 22 必须对公网开着(高级册的 Pull 模式会把这道门整个关掉),但门后只有一个一厘米宽的缝。
 
 ### 3.3 deploy-entry:只接受一种输入
 
@@ -196,14 +196,14 @@ esac
 . /opt/demo-app/bin/app.conf
 mkdir -p "$LOG_DIR"
 
-# 日志保留最近 20 份(H9 的最低限度修正)
+# 日志保留最近 20 份
 ls -1t "$LOG_DIR"/deploy-*.log 2>/dev/null | tail -n +20 | xargs -r rm -f
 LOG="$LOG_DIR/deploy-$(date -u +%Y%m%dT%H%M%S)_$$.log"
 touch "$LOG" && chmod 640 "$LOG"
 
 logger -t deploy-entry "accepted sha=$sha from=${SSH_CONNECTION:-local}"
 
-# 关键设计(B5):部署进程用 setsid 脱离 SSH 会话
+# 关键设计:部署进程用 setsid 脱离 SSH 会话
 setsid /opt/demo-app/bin/deploy.sh "$sha" >"$LOG" 2>&1 </dev/null &
 pid=$!
 tail -n +1 -f "$LOG" --pid="$pid" || true
@@ -213,7 +213,7 @@ wait "$pid"
 读懂两个设计:
 
 - **参数即白名单**:`case` 的模式匹配只放行 `deploy ` + 40 位小写十六进制。短 SHA、大写、带空格、`rm -rf`、环境变量注入(`deploy abc && ...`)全部被拒。
-- **`setsid` 脱离**(B5):部署进程跑在新的会话里,SSH 连接断掉(CI 超时、笔记本合盖)它也不受影响;SSH 客户端通过 `tail -f` "看"日志,断线只是看不到了,不影响执行。`wait "$pid"` 把部署的真实退出码还给 SSH,CI 那头能正确标红。
+- **`setsid` 脱离**:部署进程跑在新的会话里,SSH 连接断掉(CI 超时、笔记本合盖)它也不受影响;SSH 客户端通过 `tail -f` "看"日志,断线只是看不到了,不影响执行。`wait "$pid"` 把部署的真实退出码还给 SSH,CI 那头能正确标红。
 
 ### 3.4 deploy 用户的 GitHub 钥匙(repo.git 要能 fetch)
 
@@ -239,7 +239,7 @@ cd ~/demo-app-bootstrap/deploy && sudo ./install.sh git@github.com:你的用户�
 sudo ls /srv/demo-app/repo.git/HEAD >/dev/null && echo repo-cache-OK
 ```
 
-### 3.5 连接测试矩阵(A1 场景)
+### 3.5 连接测试矩阵
 
 **【本地】** 逐条试,右边是预期:
 
@@ -300,7 +300,7 @@ deploy ALL=(root) NOPASSWD: /opt/demo-app/bin/backup.sh premigrate, \
 
 > - **绝对路径**:sudoers 里的命令必须写绝对路径(`/usr/bin/systemctl`),这是防"我放一个假 systemctl 到 PATH 里"的经典骗术。
 > - **参数即边界**:`systemctl restart demo-app-web` 和 `systemctl restart demo-app-web demo-app-worker` 是两条不同的规则——sudoers 把"命令 + 精确参数"整体匹配。想 `systemctl stop ssh`?没这条规则,免谈。
-> - **glob 只是第一层**:`[0-9a-f]*` 理论上可能匹配出带空格的参数(sudoers 的 `*` 能跨空格),所以每个包装脚本内部还会再验一次"恰好一个 40 位十六进制"(A4 场景的纵深防御)。
+> - **glob 只是第一层**:`[0-9a-f]*` 理论上可能匹配出带空格的参数(sudoers 的 `*` 能跨空格),所以每个包装脚本内部还会再验一次"恰好一个 40 位十六进制"——这是第二层纵深防御。
 > - **`audit.sh *` 是已知让步**:deploy 能伪造审计行(它本来就能触发部署)。高级册第 8 章用转发到另一台机器的 syslog 修正。
 
 🧪 **验证**(【服务器】以 deploy 身份):
@@ -311,10 +311,10 @@ sudo -u deploy sudo systemctl restart demo-app-web
 sudo -u deploy sudo ls /root
 # Sorry, user deploy is not allowed to execute '/bin/ls /root' as root
 sudo -u deploy cat /opt/demo-app/env/runtime.env
-# cat: ... Permission denied   ← 数据库密码,deploy 读不到(H1 相关的权限分层)
+# cat: ... Permission denied   ← 数据库密码,deploy 读不到(权限分层的体现)
 ```
 
-改 sudoers 的铁律:改完必 `sudo visudo -cf /etc/sudoers.d/demo-app`。**写坏 sudoers 文件可能让整个 sudo 瘫痪**——那你只能靠厂商控制台救援了(P8)。
+改 sudoers 的铁律:改完必 `sudo visudo -cf /etc/sudoers.d/demo-app`。**写坏 sudoers 文件可能让整个 sudo 瘫痪**——那你只能靠厂商控制台救援了。
 
 ---
 
@@ -342,8 +342,8 @@ ProtectHome=true
 
 - **`WorkingDirectory`/`ExecStart` 走 `current` 软链**:部署切换软链 + `systemctl restart`,服务的配置文件一个字都不用改。
 - **`TimeoutStopSec=15`**:restart 时 systemd 先发 SIGTERM。server.js 收到后排干在途请求再退出;worker 处理完手头任务再退出(至少一次语义)。15 秒还没退就 SIGKILL——所以应用的优雅退出代码要有时间意识。
-- **`Restart=on-failure` 而非 `always`**:我们自己 `stop` 时不该被自动拉起。注意 systemd 默认的启动限流:连续崩 5 次进 `failed` 态**不再拉起**。这是特性不是 bug——崩溃循环不该被无限掩盖,健康检查的 soak 窗口就是为抓它设计的(P3)。
-- 最后四行是最小加固:进程拿不到新特权、有私有 /tmp、文件系统大部分只读。够用且不喧宾夺主(P13)。
+- **`Restart=on-failure` 而非 `always`**:我们自己 `stop` 时不该被自动拉起。注意 systemd 默认的启动限流:连续崩 5 次进 `failed` 态**不再拉起**。这是特性不是 bug——崩溃循环不该被无限掩盖,健康检查的 soak 窗口就是为抓它设计的。
+- 最后四行是最小加固:进程拿不到新特权、有私有 /tmp、文件系统大部分只读。够用且不喧宾夺主。
 
 单元间的依赖(web/worker 都 `Wants=docker.service`)在开机时保证顺序;真实的"数据库没就绪怎么办"由应用自身的重试 + `Restart=on-failure` 兜住。
 
@@ -353,8 +353,8 @@ ProtectHome=true
 
 `/opt/demo-app/bin/backup.sh`(root 拥有,由 sudoers/cron 调用)相对 v0 的三个升级:
 
-1. **范围**:数据库(`pg_dump -Fc`)**加** `storage/` 文件目录。H2 假设(文件存储不在备份里)在参考设计里是真的缺陷,v1 直接修掉。
-2. **保留策略 = 按次数 + 按时间组合**:每类保留最近 N 份(daily 14 / premigrate 10),**且 7 天内的一律不删**。只按次数的原始设计在部署频繁时会把历史挤光(H2 的另一半)。
+1. **范围**:数据库(`pg_dump -Fc`)**加** `storage/` 文件目录。"只备数据库、漏掉文件存储"在参考设计里是真的缺陷,v1 直接修掉。
+2. **保留策略 = 按次数 + 按时间组合**:每类保留最近 N 份(daily 14 / premigrate 10),**且 7 天内的一律不删**。只按次数的原始设计在部署频繁时会把历史挤光(保留策略的另一半)。
 3. **两类备份分开**:每日定时 `daily` + 每次迁移前 `premigrate`(部署时自动触发)。回滚时优先用最近的 `premigrate`。
 
 🧪 **验证 + 演练**(和初级册 6.3 同样的动作,这次 30 秒完成):
@@ -370,7 +370,7 @@ docker exec restore-drill psql -U drill -d drill -Atc "SELECT count(*) FROM note
 docker rm -f restore-drill
 ```
 
-> **P5 的要求是"有真实恢复演练证据"**。把这条命令的输出存好——它是你的 RTO 第一手数据。高级册第 6 章会测出完整表格(大小/耗时/RPO)。
+> **备份的要求是"有真实恢复演练证据"**。把这条命令的输出存好——它是你的 RTO 第一手数据。高级册第 6 章会测出完整表格(大小/耗时/RPO)。
 
 ---
 
@@ -391,65 +391,65 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || die 75 lock "another deploy is running"
 ```
 
-- **冻结开关(E8)**:`touch /opt/demo-app/freeze` 之后所有部署被明确拒绝并留下日志。出事故时"先止血"比"赶紧修"优先。
-- **flock(B3)**:两个部署同时来,第二个**立刻失败**而不是排队或交错执行。workflow 的 `concurrency` 是第一道防线(第 8 章),flock 是第二道——它不依赖 GitHub,手动触发、定时任务、卡死的 runner 都会被它拦住。锁文件在 `/run`(内存盘),机器重启自动清空,不会死锁。
+- **冻结开关**:`touch /opt/demo-app/freeze` 之后所有部署被明确拒绝并留下日志。出事故时"先止血"比"赶紧修"优先。
+- **flock**:两个部署同时来,第二个**立刻失败**而不是排队或交错执行。workflow 的 `concurrency` 是第一道防线(第 8 章),flock 是第二道——它不依赖 GitHub,手动触发、定时任务、卡死的 runner 都会被它拦住。锁文件在 `/run`(内存盘),机器重启自动清空,不会死锁。
 
 ### 7.2 第 3–5 步:幂等、来源校验、旧提交跳过
 
 ```bash
 CURRENT=$(basename "$(readlink "$SRV_ROOT/current")")
-if [ "$CURRENT" = "$SHA" ] && healthcheck ok; then exit 0; fi          # B2 幂等
+if [ "$CURRENT" = "$SHA" ] && healthcheck ok; then exit 0; fi          # 幂等
 
 git --git-dir="$REPO_CACHE" fetch --prune -q origin || die 11 ...
 git --git-dir="$REPO_CACHE" merge-base --is-ancestor "$SHA" refs/heads/main \
-  || die 12 verify "SHA is not an ancestor of origin/main"             # B1
+  || die 12 verify "SHA is not an ancestor of origin/main"             # 祖先校验
 
-git merge-base --is-ancestor "$SHA" "$CURRENT" && { log "skip: older"; exit 0; }   # B2
+git merge-base --is-ancestor "$SHA" "$CURRENT" && { log "skip: older"; exit 0; }   # 旧提交跳过
 ```
 
-- **B1(祖先校验)**:只部署"真的在 main 历史上"的提交。force-push 顶掉的 SHA、开发分支的 SHA、本地没推过的 SHA 一律拒绝——部署的就是 CI 测过的那份东西(P1 的来源侧保证)。
-- **旧提交跳过**:排队的部署比线上还旧?跳过(线上不动)。注意推论:**不能用"重新部署旧 SHA"来回滚**——这正是 `rollback.sh` 必须存在的原因(H8 假设的修正,E7)。
+- **祖先校验**:只部署"真的在 main 历史上"的提交。force-push 顶掉的 SHA、开发分支的 SHA、本地没推过的 SHA 一律拒绝——部署的就是 CI 测过的那份东西。
+- **旧提交跳过**:排队的部署比线上还旧?跳过(线上不动)。注意推论:**不能用"重新部署旧 SHA"来回滚**——这正是 `rollback.sh` 必须存在的原因。
 
 ### 7.3 第 6–8 步:预检、构建、提升
 
 ```bash
-df 检查剩余空间 >1GiB 否则拒绝                     # C5
-读目标提交的 .node-version,与服务器的 node 主版本比对   # C2
-检查目标提交里有 pnpm-lock.yaml                     # C2
+df 检查剩余空间 >1GiB 否则拒绝
+读目标提交的 .node-version,与服务器的 node 主版本比对
+检查目标提交里有 pnpm-lock.yaml
 
 PARTIAL="$SRV_ROOT/.partial"
 git archive "$SHA" | tar -x -C "$PARTIAL"          # 导出精确的提交内容
 ( cd "$PARTIAL" && env GIT_SHA="$SHA" bash -c "$BUILD_CMD" ) \
-  || { rm -rf "$PARTIAL"; die 20 build "build failed — live site untouched"; }   # C1
+  || { rm -rf "$PARTIAL"; die 20 build "build failed — live site untouched"; }
 
 mv "$PARTIAL" "$SRV_ROOT/releases/$SHA"            # 原子提升
 ```
 
-- **构建注入 `GIT_SHA`**:`/version` 端点返回的就是它。健康检查靠它断言"新版本真的在线上"——不是"某个版本在线上"(P3)。
-- **`.partial` 的生命周期**:构建失败就整个删掉,`releases/` 里永远只有"完整构建成功过的版本"(C1)。
+- **构建注入 `GIT_SHA`**:`/version` 端点返回的就是它。健康检查靠它断言"新版本真的在线上"——不是"某个版本在线上"。
+- **`.partial` 的生命周期**:构建失败就整个删掉,`releases/` 里永远只有"完整构建成功过的版本"。
 - **`git archive` 而不是 `git pull`**:导出的是**提交的精确快照**,不带 `.git`、不受工作区状态影响。
 
-> H7(生产机构建的代价)依然存在:这一步要联网下载依赖、要吃 CPU。参考设计接受了这个代价,高级册 D1 会用对比实验回答"什么时候不该接受"。
+> "在生产机构建的代价"依然存在:这一步要联网下载依赖、要吃 CPU。参考设计接受了这个代价,高级册第 3 章会用对比实验回答"什么时候不该接受"。
 
 ### 7.4 第 9–11 步:配置预检、备份、迁移
 
 ```bash
 sudo -n /opt/demo-app/bin/check-config.sh "$SHA" \
-  || die 22 check-config "new release would crash on missing env"    # E6/H6
+  || die 22 check-config "new release would crash on missing env"
 
 sudo -n /opt/demo-app/bin/backup.sh premigrate \
-  || die 24 backup "pre-migration backup failed — refusing to migrate" # P5
+  || die 24 backup "pre-migration backup failed — refusing to migrate"
 
 sudo -n /opt/demo-app/bin/migrate-wrapper.sh "$SHA" \
-  || die 26 migrate "migration failed — code NOT switched"            # D3
+  || die 26 migrate "migration failed — code NOT switched"
 ```
 
-- **check-config(E6)**:以 **app 用户身份、加载真实 `runtime.env`** 跑 `node dist/config.js --check-config`。"新版本需要 `NEW_API_KEY` 但没人配"这类事故,从**切换后崩溃 → 回滚兜底**变成**切换前拒绝 → 线上无感**。注意它以 app 用户跑:和运行时完全同视角(权限、环境变量都一致),而不是 deploy 用户的想当然。
-- **备份失败 = 拒绝迁移**:宁可部署失败,不可裸奔迁移(P5)。
-- **迁移失败 = 代码不切换**(D3):线上仍是旧版本,旧代码 + 未变的 schema,继续正常服务。已应用的迁移停在半路?`migrate.js` 每个文件一个事务,失败的文件整体回滚,`schema_migrations` 不会记录它。
-- **迁移并发防护(D6)是双层的**:`migrate-wrapper.sh` 的 flock(主机级,快速失败)+ `migrate.js` 里的 `pg_advisory_lock`(数据库级,跨主机也成立)。
+- **check-config**:以 **app 用户身份、加载真实 `runtime.env`** 跑 `node dist/config.js --check-config`。"新版本需要 `NEW_API_KEY` 但没人配"这类事故,从**切换后崩溃 → 回滚兜底**变成**切换前拒绝 → 线上无感**。注意它以 app 用户跑:和运行时完全同视角(权限、环境变量都一致),而不是 deploy 用户的想当然。
+- **备份失败 = 拒绝迁移**:宁可部署失败,不可裸奔迁移。
+- **迁移失败 = 代码不切换**:线上仍是旧版本,旧代码 + 未变的 schema,继续正常服务。已应用的迁移停在半路?`migrate.js` 每个文件一个事务,失败的文件整体回滚,`schema_migrations` 不会记录它。
+- **迁移并发防护是双层的**:`migrate-wrapper.sh` 的 flock(主机级,快速失败)+ `migrate.js` 里的 `pg_advisory_lock`(数据库级,跨主机也成立)。
 
-🧪 **D6 现场验证**(【服务器】):
+🧪 **迁移并发防护现场验证**(【服务器】):
 
 ```bash
 # 两个终端同时各跑一个迁移,第二个会在 advisory lock 上排队
@@ -470,7 +470,7 @@ sudo -n systemctl restart $UNITS || die 28 restart ...
 if ! sudo -n /opt/demo-app/bin/healthcheck.sh "$SHA"; then
   # 回切到 $CURRENT,重启,再健康检查旧的
   #   旧的健康 → die 30(报告"已回滚成功")
-  #   旧的也不健康 → die 31(报告"需要人工介入",绝不谎报成功,E5)
+  #   旧的也不健康 → die 31(报告"需要人工介入",绝不谎报成功)
 fi
 ```
 
@@ -482,20 +482,20 @@ fi
 version=$(curl ... "$VERSION_URL")   # ① /version 的 gitSha == 目标 SHA(不是"端口通了")
 ready=$(curl ... "$READY_URL")       # ② /health/ready 200 = DB 真实读写成功
 hb=psql "SELECT now()-last_beat ..." # ③ worker 心跳 < 15s(覆盖 worker 单元)
-for u in $UNITS; do is-active ...    # ④ 所有单元 active(不接受混合状态,P4)
-sleep "$SOAK_SECONDS"; 再全部查一遍   # ⑤ 30 秒 soak(抓"起来又崩"的循环,P3)
+for u in $UNITS; do is-active ...    # ④ 所有单元 active(不接受混合状态)
+sleep "$SOAK_SECONDS"; 再全部查一遍   # ⑤ 30 秒 soak(抓"起来又崩"的循环)
 ```
 
-①③⑤ 分别封堵三种假阳性:**旧进程还在应答**(切换其实没生效)、**worker 崩溃循环但 web 正常**、**起来 10 秒就崩但检查已通过**。H3 假设认为参考设计的健康检查拦不住前两种——v1 的实现就是修正本身。第 9 章会现场制造这两种假阳性给你看。
+①③⑤ 分别封堵三种假阳性:**旧进程还在应答**(切换其实没生效)、**worker 崩溃循环但 web 正常**、**起来 10 秒就崩但检查已通过**。"健康检查有假阳性"这个假设认为参考设计的健康检查拦不住前两种——v1 的实现就是修正本身。第 9 章会现场制造这两种假阳性给你看。
 
 ### 7.6 第 15–16 步:保留策略、审计
 
 ```bash
-# 保留最近 5 个 release,永不删除:当前版、上一版(F5)
+# 保留最近 5 个 release,永不删除:当前版、上一版
 sudo -n /opt/demo-app/bin/audit.sh "$SHA" deploy ok "$(( $(date +%s) - START_TS ))"
 ```
 
-`audit.log` 长这样(P10):
+`audit.log` 长这样:
 
 ```
 2026-10-25T12:00:07Z actor=deploy action=deploy sha=1f2e... result=ok duration=94s
@@ -528,7 +528,7 @@ sudo -n /opt/demo-app/bin/audit.sh "$SHA" deploy ok "$(( $(date +%s) - START_TS 
 ```yaml
 concurrency:
   group: deploy-production
-  cancel-in-progress: false      # 不取消进行中的部署;排队行为见 H5(高级册)
+  cancel-in-progress: false      # 不取消进行中的部署;排队行为高级册会讲
 steps:
   - name: Deploy over SSH (forced command)
     env:
@@ -545,8 +545,8 @@ steps:
           -i ~/.ssh/id_ed25519 "deploy@$HOST" "deploy $SHA"
 ```
 
-- **不使用现成的 SSH action**(如 appleboy/ssh-action):多一层依赖就多一层供应链风险,而且这 5 行能让你**看懂**每一次连接(P13)。想换 action,理解这 5 行之后再说。
-- **`KNOWN_HOSTS` 固定主机指纹(A5)**:服务器被替换/中间人时,`ssh` 直接失败而不是提示"指纹变了,继续吗?"。部署通道对主机身份零容忍。
+- **不使用现成的 SSH action**(如 appleboy/ssh-action):多一层依赖就多一层供应链风险,而且这 5 行能让你**看懂**每一次连接。想换 action,理解这 5 行之后再说。
+- **`KNOWN_HOSTS` 固定主机指纹**:服务器被替换/中间人时,`ssh` 直接失败而不是提示"指纹变了,继续吗?"。部署通道对主机身份零容忍。
 
 ### 8.2 三个 Secrets + host key
 
@@ -595,7 +595,7 @@ readlink /srv/demo-app/current
 
 > 每个剧本格式:**怎么造** → **推上去** → **该看到什么** → **验证了哪条原则**。做完记得 `git revert` 恢复。全部在**你的实验仓库**做。
 
-### 剧本 1:bad-build(构建失败,C1)
+### 剧本 1:bad-build(构建失败)
 
 **【本地】** 造:在 `src/db.js` 里加一行语法错误(如 `const broken = {`),提交推送。
 
@@ -606,21 +606,21 @@ build: SYNTAX ERROR in src/db.js:
 FAILED step=build: build failed — no release created, live site untouched
 ```
 
-**【服务器】** 验证:`ls /srv/demo-app/releases | wc -l` 没多;`curl localhost:3000/version` 还是旧 SHA。**原则:P6(失败留在预检阶段,线上无感)。**
+**【服务器】** 验证:`ls /srv/demo-app/releases | wc -l` 没多;`curl localhost:3000/version` 还是旧 SHA。**原则:爆炸半径最小——失败留在预检阶段,线上无感。**
 
-### 剧本 2:lockfile-mismatch(C2)
+### 剧本 2:lockfile-mismatch
 
 造:`package.json` 里手动把 `pg` 的版本改成 `9.0.0`(不跑 `pnpm install`),推送。
 
 该看到:服务器上 `pnpm install --frozen-lockfile` 拒绝(lockfile 与 manifest 不一致),step=build 失败。**原则:可复现性。**
 
-### 剧本 3:wrong-node-version(C2)
+### 剧本 3:wrong-node-version
 
 造:把 `.node-version` 改成 `20.11.1`,推送。
 
 该看到:`FAILED step=preflight: server Node major=24, .node-version wants=20`。线上无感。**原则:环境漂移在预检阶段暴露。**
 
-### 剧本 4:bad-migration(迁移失败,代码不切换,D3)
+### 剧本 4:bad-migration(迁移失败,代码不切换)
 
 造:新建 `migrations/003_bad.sql`,内容 `ALTER TABLE notes ADD COLUMN boom; ALTER TABLE notes ADD COLUMN boom;`(重复列名必然报错),推送。
 
@@ -632,9 +632,9 @@ migrate: FAILED at 003_bad.sql: column "boom" of relation "notes" already exists
 FAILED step=migrate: migration failed — code NOT switched, live still on ...
 ```
 
-**【服务器】** 验证:`curl localhost:3000/version` 仍是旧 SHA;`/srv/demo-app/current` 没变;但**备份多了一份**(`ls /var/backups/demo-app/db/ | tail -2`,迁移前的 premigrate 备份)。**原则:P2/P6——迁移失败不是灾难,是又一次被拒绝的变更。** 恢复:`git rm migrations/003_bad.sql && git commit && git push`。
+**【服务器】** 验证:`curl localhost:3000/version` 仍是旧 SHA;`/srv/demo-app/current` 没变;但**备份多了一份**(`ls /var/backups/demo-app/db/ | tail -2`,迁移前的 premigrate 备份)。**原则:回滚安全 + 爆炸半径可控——迁移失败不是灾难,是又一次被拒绝的变更。** 恢复:`git rm migrations/003_bad.sql && git commit && git push`。
 
-### 剧本 5:bad-startup(迁移成功但起不来 → 自动回切,E4)
+### 剧本 5:bad-startup(迁移成功但起不来 → 自动回切)
 
 造:在 `src/server.js` 的配置检查之后插入:
 
@@ -651,9 +651,9 @@ health check FAILED — rolling back to <旧SHA>
 FAILED step=health: new release unhealthy; rolled back to <旧SHA> (healthy). DB stays migrated — see expand/contract
 ```
 
-**【服务器】** 验证:`curl localhost:3000/version` 回到旧 SHA 且 `/health/ready` 是 200;`journalctl -u demo-app-web -n 20` 里能看到那个 `boom` 报错。**原则:P6(自动回切)+ P2(数据库保持已迁移状态——本次没有破坏性迁移,所以旧代码照跑;如果迁移是破坏性的,这里就是事故现场,高级册 expand/contract 教你让这种时刻永远安全)。** 恢复:revert 后推送,看它再次部署成功。
+**【服务器】** 验证:`curl localhost:3000/version` 回到旧 SHA 且 `/health/ready` 是 200;`journalctl -u demo-app-web -n 20` 里能看到那个 `boom` 报错。**原则:自动回切把爆炸半径压到最小 + 回滚安全(数据库保持已迁移状态——本次没有破坏性迁移,所以旧代码照跑;如果迁移是破坏性的,这里就是事故现场,高级册 expand/contract 教你让这种时刻永远安全)。** 恢复:revert 后推送,看它再次部署成功。
 
-### 剧本 6:bad-worker(web 正常 worker 崩溃 → 健康检查抓住,E2/P3)
+### 剧本 6:bad-worker(web 正常 worker 崩溃 → 健康检查抓住)
 
 造:在 `src/worker.js` 的 `main()` 开头加:
 
@@ -661,9 +661,9 @@ FAILED step=health: new release unhealthy; rolled back to <旧SHA> (healthy). DB
 setInterval(() => { throw new Error('crash loop fixture') }, 3000)
 ```
 
-该看到:健康检查卡在 `worker-heartbeat=XXs`(心跳超龄),回切。如果 v0 的健康检查只看 web 端口,这个版本就会**被当成部署成功**——半夜 worker 全线罢工。**原则:P3(健康检查覆盖全部单元)。** 恢复:revert。
+该看到:健康检查卡在 `worker-heartbeat=XXs`(心跳超龄),回切。如果 v0 的健康检查只看 web 端口,这个版本就会**被当成部署成功**——半夜 worker 全线罢工。**原则:健康检查要覆盖全部单元。** 恢复:revert。
 
-### 剧本 7:needs-new-env(缺配置,切换前拦截,E6/H6)
+### 剧本 7:needs-new-env(缺配置,切换前拦截)
 
 造:在 `src/config.js` 的 `REQUIRED_ENV` 数组里加 `'NEW_SECRET_TOKEN'`(不配置它),推送。
 
@@ -676,11 +676,11 @@ FAILED step=check-config: new release would crash on missing env — kept curren
 
 对比剧本 5:同样的缺陷,一个在**切换前**被拦(线上零影响),一个在**切换后**靠回滚兜底。**原则:把失败左移。** 恢复:revert。
 
-### 剧本 8:重复部署与并发(B2/B3/B5)
+### 剧本 8:重复部署与并发
 
 - **幂等**:对同一个 SHA 再次手动触发(Actions → deploy workflow → Run workflow),预期 `sha already live and healthy — nothing to do`,audit 里多一条 `result=ok duration=1s`。
 - **并发**:快速连续 push 两个提交,去 Actions 看:两个 deploy 排队(concurrency),先跑完旧的再跑新的,最后线上是第二个(旧的若更旧会被 skip)。服务器侧 flock 日志里留有证据。
-- **断线不中断(B5)**:Actions 里 deploy 正在跑时,手动 Cancel workflow(CI 侧立刻"失败"),然后服务器上 `tail /var/log/demo-app/deploy-*.log | grep -E '===|FAILED'`——部署照常完成。CI 状态与真实结果短暂不一致,这是 H5 的一部分,**这是设计使然(setsid),不是 bug**。
+- **断线不中断**:Actions 里 deploy 正在跑时,手动 Cancel workflow(CI 侧立刻"失败"),然后服务器上 `tail /var/log/demo-app/deploy-*.log | grep -E '===|FAILED'`——部署照常完成。CI 状态与真实结果短暂不一致,**这是设计使然(setsid),不是 bug**。
 
 ---
 
@@ -698,7 +698,7 @@ FAILED step=check-config: new release would crash on missing env — kept curren
 回滚(不需要外网,大约 10 秒):
   sudo /opt/demo-app/bin/rollback.sh          # 回到上一个 release
   sudo /opt/demo-app/bin/rollback.sh <SHA>    # 回到指定 release
-注意:迁移不会被回滚(P2)。若怀疑是数据问题 → 见下一条。
+注意:迁移不会被回滚。若怀疑是数据问题 → 见下一条。
 ═══ 数据出事了 ═════════════════════════════════════════════
 1. 停止自动部署止血: sudo touch /opt/demo-app/freeze
 2. 找备份: sudo ls -lt /var/backups/demo-app/db/ | head
@@ -709,7 +709,7 @@ FAILED step=check-config: new release would crash on missing env — kept curren
 3. 清理: fuser -k /run/demo-app/deploy.lock(谨慎),锁文件可删
 ═══ 改了部署脚本(仓库 deploy/)════════════════════════════
 sudo ~/demo-app-bootstrap/deploy/install.sh <repo-url>   # 重新安装(幂等)
-注意:线上不会自动更新部署脚本(H11 漂移风险,高级册加检测)
+注意:线上不会自动更新部署脚本(漂移风险,高级册加检测)
 ```
 
 ---
@@ -739,12 +739,12 @@ sudo ~/demo-app-bootstrap/deploy/install.sh <repo-url>   # 重新安装(幂等)
 
 ## 还没解决的问题(高级册的目录)
 
-1. 重启窗口仍然存在(几十到几百毫秒)→ **蓝绿切换**(D3)
-2. 构建仍在生产机上(H7)→ **CI 构建产物对比实验**(D1)
-3. SSH 端口必须对公网开放(H10)→ **Pull 模式**(D2)
-4. CI 私钥是长期静态的 → **短期 SSH 证书**(D4)
+1. 重启窗口仍然存在(几十到几百毫秒)→ **蓝绿切换**
+2. 构建仍在生产机上 → **CI 构建产物对比实验**
+3. SSH 端口必须对公网开放 → **Pull 模式**
+4. CI 私钥是长期静态的 → **短期 SSH 证书**
 5. 破坏性迁移怎么做才安全 → **expand/contract 全流程**
-6. 部署脚本被改了没重装,谁会发现?→ **漂移检测**(H11/F2)
+6. 部署脚本被改了没重装,谁会发现?→ **漂移检测**
 7. 备份的 RPO/RTO 到底是多少?→ **实测表格**
 
 ---

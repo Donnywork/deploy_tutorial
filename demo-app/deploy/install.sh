@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh <git-url-of-your-repo> — 在空服务器上引导整套部署系统(F1)。
+# install.sh <git-url-of-your-repo> — 在空服务器上引导整套部署系统。
 # 以 root 运行;从仓库的 deploy/ 目录里执行。
 # 本脚本做"机器相关"的部分;密钥与 GitHub 设置见中级册第 3/8 章。
 set -euo pipefail
@@ -18,7 +18,7 @@ for cmd in git node pnpm docker systemctl runuser flock openssl visudo; do
   command -v "$cmd" >/dev/null || { echo "MISSING: $cmd — install it first"; exit 1; }
 done
 
-echo "== 1/9 创建用户(P7:三类身份,各司其职)=="
+echo "== 1/9 创建用户(三类身份,各司其职)=="
 id "$APP"    >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash "$APP"
 id "$DEPLOY" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash "$DEPLOY"
 passwd -l "$APP" 2>/dev/null || true   # 两个账户都禁止密码登录
@@ -38,7 +38,7 @@ d /run/demo-app 0755 deploy deploy -
 EOF
 systemd-tmpfiles --create /etc/tmpfiles.d/demo-app.conf
 
-echo "== 3/9 安装部署脚本(root 拥有,deploy 不可写;F2:升级需手动重跑本步)=="
+echo "== 3/9 安装部署脚本(root 拥有,deploy 不可写;升级需手动重跑本步)=="
 for f in app.conf deploy-entry deploy.sh healthcheck.sh check-config.sh \
          migrate-wrapper.sh backup.sh rollback.sh audit.sh; do
   install -o root -g root -m 0755 "$HERE/$f" "$OPT/bin/$f"

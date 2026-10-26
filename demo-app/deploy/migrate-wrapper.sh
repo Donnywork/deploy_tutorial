@@ -4,8 +4,8 @@
 #
 # 双层并发保护:
 #   - 本脚本 flock:主机级快速失败
-#   - migrate.js 内部 pg_advisory_lock:数据库级(跨主机也成立,D6)
-# 参数防御(A4):sudoers 的 [0-9a-f]* glob 理论上可能匹配带空格的参数,
+#   - migrate.js 内部 pg_advisory_lock:数据库级(跨主机也成立)
+# 参数防御:sudoers 的 [0-9a-f]* glob 理论上可能匹配带空格的参数,
 # 所以这里再验一次"恰好一个 40 位十六进制参数"。
 set -euo pipefail
 . /opt/demo-app/bin/app.conf

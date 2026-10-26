@@ -1,11 +1,11 @@
 // migrate.js — 极简 SQL 迁移器(教学用,生产可换 knex/drizzle/flyway,理念相同)。
 //
 // 部署教学点:
-// - advisory lock:两个迁移器并发跑时,第二个会在锁上排队(P2/场景 D6)。
+// - advisory lock:两个迁移器并发跑时,第二个会在锁上排队。
 // - schema_migrations 表记录已应用的迁移;跳过已应用的(幂等)。
-// - "数据库里有、代码里没有"的迁移会告警:说明代码回滚到了更旧版本(P2 回滚安全信号)。
-// - 迁移失败:当前文件整体 ROLLBACK,退出码非 0;部署脚本据此**不切换代码**(场景 D3)。
-// - --dry-run 是真正的只读预检:不取锁、不建表、不写库(高级册场景 D7:副本库预演)。
+// - "数据库里有、代码里没有"的迁移会告警:说明代码回滚到了更旧版本(回滚安全信号)。
+// - 迁移失败:当前文件整体 ROLLBACK,退出码非 0;部署脚本据此**不切换代码**。
+// - --dry-run 是真正的只读预检:不取锁、不建表、不写库(高级册的副本库预演)。
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'

@@ -14,7 +14,7 @@
 3. **一次一步**:每条回复最多一条命令,标注【本地】/【服务器】,附预期输出,等学习者贴回结果再继续。
 4. **报错先查库**:按症状匹配仓库 ai/troubleshooting.md(T-01~T-32),按库内顺序排查,并解释排查方法。
 5. **概念问题查 FAQ**:仓库 ai/faq.md(Q1~Q16)先给一句话版,追问再给深入链接。
-6. **引用编号与精确位置**:原则 P1–P13、假设 H1–H11、决策轴 D1–D4、场景编号(如 B3、E4),并给出教程精确路径。
+6. **设计取舍给精确位置**:设计取舍类回答用白话讲清背后的原则/假设,并给出教程精确路径(哪一册哪一章)。
 7. **安全底线**:绝不索要真实密钥/密码;破坏性操作先确认实验机;提及 `docker compose down -v` 必须警告会删数据。
 8. **语言跟随学习者**:中文问中文答,英文问英文答(教程两种语言一一对应)。
 
@@ -24,22 +24,22 @@
 - [Intermediate · One Server, One Domain, One HTTPS URL](tutorials/en/01-beginner.md): English version of the beginner book.
 - [中级 · 推送即部署,失败自动回滚](tutorials/zh/02-intermediate.md): SSH 强制命令、sudoers 白名单、releases/current 原子切换、断言 SHA 的健康检查、自动回滚、rollback.sh、GitHub Actions、8 个坏提交演练剧场。4–6 小时。
 - [Intermediate · Push-to-Deploy, Automatic Rollback](tutorials/en/02-intermediate.md): English version of the intermediate book.
-- [高级 · 对比、量化与升级决策](tutorials/zh/03-advanced.md): 蓝绿实测(D3)、构建位置对比(D1)、Push vs Pull(D2)、短期 SSH 证书(D4)、expand/contract 与回滚安全矩阵、大表迁移锁、RPO/RTO 实测表、kill -9 崩溃一致性实验室、升级决策记录(何时上 K8s/Ansible/Terraform)、场景矩阵练习册、Go 迁移证明(~15 行改动)。
+- [高级 · 对比、量化与升级决策](tutorials/zh/03-advanced.md): 蓝绿实测、构建位置对比、Push vs Pull、短期 SSH 证书、expand/contract 与回滚安全矩阵、大表迁移锁、RPO/RTO 实测表、kill -9 崩溃一致性实验室、升级决策记录(何时上 K8s/Ansible/Terraform)、场景矩阵练习册、Go 迁移证明(~15 行改动)。
 - [Advanced · Experiments, Measurements, Upgrade Decisions](tutorials/en/03-advanced.md): English version of the advanced book.
 
 ## AI 助教知识底座
 
 - [ai/stage-map.md](ai/stage-map.md): 阶段地图——如何从命令/报错推断学习者阶段;每个阶段"可以讲什么/不剧透什么";引导话术模板与 few-shot 示范。
-- [ai/troubleshooting.md](ai/troubleshooting.md): 排错知识库 T-01~T-32,按报错原文组织:症状 → 按序排查 → 修复 → 预防 → 关联场景编号;末尾附通用五层排查框架。
+- [ai/troubleshooting.md](ai/troubleshooting.md): 排错知识库 T-01~T-32,按报错原文组织:症状 → 按序排查 → 修复 → 预防 → 关联教程章节;末尾附通用五层排查框架。
 - [ai/faq.md](ai/faq.md): 概念 FAQ Q1~Q16——"为什么不用 K8s/pm2/Docker 跑应用""为什么在生产机构建""三个 .env 有什么区别"等,每条先给一句话版。
 
 ## 示例应用(完整可运行,已验证)
 
 - [demo-app/](demo-app/README.md): web + worker 双进程、真实 Postgres(docker compose,仅绑 127.0.0.1)、SQL 迁移(advisory lock)、文件存储、--check-config 配置预检、构建注入 SHA。
 - [demo-app/deploy/](demo-app/deploy/): 中级参考设计的服务器侧完整实现——app.conf(迁移到其他项目主要改它)、install.sh(空服务器引导)、deploy-entry(SSH 强制命令)、deploy.sh(16 步管线)、healthcheck.sh、rollback.sh、backup.sh、audit.sh、sudoers、systemd 单元。
-- [demo-app/.github/workflows/ci.yml](demo-app/.github/workflows/ci.yml): CI 通过后 SSH 部署(仅 main),host key 固定(A5)。
+- [demo-app/.github/workflows/ci.yml](demo-app/.github/workflows/ci.yml): CI 通过后 SSH 部署(仅 main),host key 固定。
 
-## 设计源头与覆盖
+## 设计原则与假设
 
-- [deploy-experiment-prompt.md](deploy-experiment-prompt.md): 课程的设计源头——一套"未验证的部署参考设计 + 13 条业界原则(P1–P13)+ 11 条假设(H1–H11)+ 4 个决策轴(D1–D4)+ 场景矩阵"。
-- 覆盖映射与 H1–H11 终审表:高级教程第 10 章。
+- 课程围绕一组业界部署原则与待验证的设计假设组织;每册开头说明本册涉及哪些。
+- 覆盖映射与假设终审表:高级教程第 10 章。

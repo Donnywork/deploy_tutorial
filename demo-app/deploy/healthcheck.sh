@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# healthcheck.sh <sha> — "端口通了"不等于"新版本正常"(P3)。
+# healthcheck.sh <sha> — "端口通了"不等于"新版本正常"。
 # 必须同时断言:
-#   1. /version 返回的正是目标 SHA(旧进程应答 = 假阳性,E2)
+#   1. /version 返回的正是目标 SHA(旧进程应答 = 假阳性)
 #   2. /health/ready 200(真实 DB 读写,不是只 ping 进程)
-#   3. worker 心跳足够新(worker 崩溃循环 = 假阳性,E2)
-#   4. 所有单元 active(不接受混合状态,P4/E3)
-#   5. soak 窗口后再次确认(抓被 systemd 自动重启掩盖的崩溃循环,P3)
+#   3. worker 心跳足够新(worker 崩溃循环 = 假阳性)
+#   4. 所有单元 active(不接受混合状态)
+#   5. soak 窗口后再次确认(抓被 systemd 自动重启掩盖的崩溃循环)
 set -uo pipefail
 . /opt/demo-app/bin/app.conf
 
