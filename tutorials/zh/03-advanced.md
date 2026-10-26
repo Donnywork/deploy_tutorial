@@ -197,7 +197,7 @@ package:
     - uses: pnpm/action-setup@v4
       with: { version: 11 }
     - uses: actions/setup-node@v4
-      with: { node-version: 22, cache: pnpm }
+      with: { node-version: 24, cache: pnpm }
     - run: pnpm install --frozen-lockfile && pnpm run build
       env: { GIT_SHA: ${{ github.sha }} }
     - run: tar -czf artifact.tar.gz dist migrations

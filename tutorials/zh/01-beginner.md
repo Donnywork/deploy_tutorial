@@ -292,19 +292,19 @@ sudo mkdir -p demo-app && sudo chown sam:sam demo-app && cd demo-app
 # 先把代码弄进来(下一节),docker-compose.yml 就在仓库里
 ```
 
-### 3.2 安装 Node 22 和 pnpm
+### 3.2 安装 Node 24 和 pnpm
 
 **【服务器】**:
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
-node -v          # v22.x.x
+node -v          # v24.x.x
 sudo npm install -g pnpm@11
 pnpm -v
 ```
 
-> 仓库里有个 `.node-version` 文件写着 `22.20.0`。中级册的部署脚本会校验"服务器的 Node 主版本 == 仓库声明的主版本"——版本漂移是"本地好好的、服务器报错"的另一大来源(C2 场景)。
+> 仓库里有个 `.node-version` 文件写着 `24.22.1`。中级册的部署脚本会校验"服务器的 Node 主版本 == 仓库声明的主版本"——版本漂移是"本地好好的、服务器报错"的另一大来源(C2 场景)。另外:2026-10-21 Node.js 修复了 10 个 CVE(含可致 RCE 的 Brotli 解码漏洞),**钉版本时永远钉到打过最新安全补丁的版本**(22 线对应 22.23.4,本教程用 Active LTS 的 24.22.1)。
 
 ### 3.3 创建运行应用的专用用户和拿代码
 

@@ -292,19 +292,19 @@ sudo mkdir -p demo-app && sudo chown sam:sam demo-app && cd demo-app
 # code lands here in the next section; docker-compose.yml ships in the repo
 ```
 
-### 3.2 Install Node 22 and pnpm
+### 3.2 Install Node 24 and pnpm
 
 **[server]**:
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
-node -v          # v22.x.x
+node -v          # v24.x.x
 sudo npm install -g pnpm@11
 pnpm -v
 ```
 
-> The repo carries a `.node-version` file saying `22.20.0`. The intermediate book's deploy script checks "server's Node major == the major declared in the repo" — version drift is the other big source of "works locally, breaks in prod" (scenario C2).
+> The repo carries a `.node-version` file saying `24.22.1`. The intermediate book's deploy script checks "server's Node major == the major declared in the repo" — version drift is the other big source of "works locally, breaks in prod" (scenario C2). Also note: on 2026-10-21 Node.js fixed 10 CVEs (including an RCE-capable Brotli decoder flaw) — **always pin to a version that carries the latest security patches** (that release was 22.23.4 for the 22 line; this course uses the Active LTS 24.22.1).
 
 ### 3.3 A dedicated user for the app, and getting the code
 

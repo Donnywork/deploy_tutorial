@@ -617,7 +617,7 @@ You should see: on the server, `pnpm install --frozen-lockfile` refuses (lockfil
 
 Make: change `.node-version` to `20.11.1`, push.
 
-You should see: `FAILED step=preflight: server Node major=22, .node-version wants=20`. Live, untouched. **Principle: environment drift surfaces in preflight.**
+You should see: `FAILED step=preflight: server Node major=24, .node-version wants=20`. Live, untouched. **Principle: environment drift surfaces in preflight.**
 
 ### Script 4: bad-migration (migration fails, code doesn't switch, D3)
 

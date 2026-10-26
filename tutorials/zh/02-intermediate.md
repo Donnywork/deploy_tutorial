@@ -618,7 +618,7 @@ FAILED step=build: build failed — no release created, live site untouched
 
 造:把 `.node-version` 改成 `20.11.1`,推送。
 
-该看到:`FAILED step=preflight: server Node major=22, .node-version wants=20`。线上无感。**原则:环境漂移在预检阶段暴露。**
+该看到:`FAILED step=preflight: server Node major=24, .node-version wants=20`。线上无感。**原则:环境漂移在预检阶段暴露。**
 
 ### 剧本 4:bad-migration(迁移失败,代码不切换,D3)
 
