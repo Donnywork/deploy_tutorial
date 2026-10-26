@@ -1,0 +1,457 @@
+<!doctype html>
+<!-- ================================================================
+  deploy_tutorial 课程总览页(自包含,无外部依赖,可直接托管)
+  托管方式 A:放在你的网站上 —— 把下面 REPO_BLOB_BASE 改成你的
+             GitHub 仓库 blob 前缀(见 <script> 顶部注释)
+  托管方式 B:连同整个仓库目录一起做静态托管(如 GitHub Pages)
+             —— 把 REPO_BLOB_BASE 设为空字符串 "",链接自动变相对路径
+  同目录下的 llms.txt 是给 AI agent 读取的站点入口
+=============================================================== -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>部署实战教程 — 从第一次 SSH 到推送即部署</title>
+<meta name="description" content="一套边做边学的三级部署课程:初级把应用可靠地跑在一台服务器上,中级实现推送即部署与自动回滚,高级做蓝绿、CI 构建产物与灾备演练。中英双语,配套可运行示例应用与 AI 助教。">
+<meta property="og:title" content="部署实战教程 — 从第一次 SSH 到推送即部署">
+<meta property="og:description" content="三级递进 × 中英双语 × 可运行示例 × AI 助教。从零基础到蓝绿切换与 RPO/RTO 实测。">
+<meta property="og:type" content="website">
+<link rel="llms" href="llms.txt">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Course",
+  "name": "部署实战教程 Deploy Tutorial",
+  "description": "Three-level hands-on deployment course: from your first SSH login to push-to-deploy, automatic rollback, blue-green switching and disaster-recovery drills. Bilingual (zh/en) with a runnable demo app.",
+  "inLanguage": ["zh-CN", "en"],
+  "educationalLevel": "Beginner to Advanced",
+  "provider": { "@type": "Organization", "name": "deploy_tutorial" }
+}
+</script>
+<style>
+  :root{
+    --bg:#f8fafc; --card:#ffffff; --ink:#0f172a; --muted:#475569; --line:#e2e8f0;
+    --blue:#2563eb; --green:#16a34a; --orange:#ea580c; --purple:#7c3aed; --red:#dc2626;
+    --hero1:#0b1220; --hero2:#16233f;
+    --chip-blue:#eff6ff; --chip-green:#f0fdf4; --chip-orange:#fff7ed; --chip-purple:#f5f3ff; --chip-red:#fef2f2;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font:0.9em/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f1f5f9;border:1px solid var(--line);border-radius:5px;padding:.08em .4em}
+
+  header{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.86);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .nav{max-width:1080px;margin:0 auto;padding:.65rem 1.25rem;display:flex;align-items:center;gap:1rem}
+  .brand{font-weight:700;display:flex;align-items:center;gap:.5rem;color:var(--ink)}
+  .brand .dot{width:.85rem;height:.85rem;border-radius:50%;background:conic-gradient(var(--blue) 0 33%,var(--green) 0 66%,var(--purple) 0)}
+  .nav .spacer{flex:1}
+  .nav a.github{color:var(--muted);font-size:.92rem}
+  .lang-btn{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:.28rem .85rem;font-size:.88rem;cursor:pointer;color:var(--muted)}
+  .lang-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+  .hero{background:linear-gradient(160deg,var(--hero1),var(--hero2));color:#e6edf7;padding:4.2rem 1.25rem 3.4rem}
+  .hero .inner{max-width:1080px;margin:0 auto}
+  .hero .kicker{color:#7dd3fc;font-size:.86rem;letter-spacing:.18em;text-transform:uppercase;margin:0 0 .6rem}
+  .hero h1{font-size:clamp(1.7rem,4vw,2.7rem);line-height:1.25;margin:0 0 .9rem;color:#fff}
+  .hero p.lead{max-width:46rem;color:#b9c5da;font-size:1.06rem;margin:0 0 1.6rem}
+  .cta{display:flex;gap:.8rem;flex-wrap:wrap}
+  .cta a{display:inline-block;padding:.62rem 1.3rem;border-radius:10px;font-weight:600}
+  .cta .primary{background:var(--blue);color:#fff}
+  .cta .primary:hover{background:#1d4ed8;text-decoration:none}
+  .cta .ghost{border:1px solid #33415c;color:#dbe4f3}
+  .cta .ghost:hover{border-color:#7dd3fc;color:#7dd3fc;text-decoration:none}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.2rem,1fr));gap:.7rem;margin-top:2.4rem}
+  .stats .s{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:.75rem .9rem}
+  .stats b{display:block;font-size:1.45rem;color:#fff}
+  .stats span{font-size:.82rem;color:#93a3bd}
+
+  main{max-width:1080px;margin:0 auto;padding:0 1.25rem}
+  section{padding:3.2rem 0}
+  section + section{border-top:1px solid var(--line)}
+  .kicker{font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--blue);font-weight:700;margin:0 0 .45rem}
+  h2{font-size:1.55rem;margin:0 0 1.1rem}
+  h3{font-size:1.08rem;margin:1.2rem 0 .5rem}
+
+  .pains{display:grid;grid-template-columns:repeat(auto-fit,minmax(15.5rem,1fr));gap:.8rem}
+  .pain{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.85rem 1rem;font-size:.95rem;color:var(--muted)}
+  .pain b{color:var(--ink)}
+
+  .levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));gap:1.1rem;align-items:stretch}
+  .level{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.35rem 1.4rem;display:flex;flex-direction:column;border-top:4px solid var(--blue)}
+  .level.m2{border-top-color:var(--green)}
+  .level.m3{border-top-color:var(--purple)}
+  .level .tag{font-size:.78rem;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+  .level h3{margin:.3rem 0 .1rem;font-size:1.22rem}
+  .level .sub{color:var(--muted);font-size:.92rem;margin:0 0 .9rem}
+  .level ul{margin:.6rem 0;padding:0;list-style:none;font-size:.9rem;color:var(--muted)}
+  .level ul li{padding-left:1.15rem;position:relative;margin:.22rem 0}
+  .level ul li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+  .level details{margin:.6rem 0;font-size:.9rem}
+  .level summary{cursor:pointer;color:var(--muted);font-weight:600}
+  .level details ol{margin:.45rem 0 .2rem;padding-left:1.3rem;color:var(--muted)}
+  .level .meta{display:flex;gap:1rem;font-size:.83rem;color:var(--muted);margin:.5rem 0 .9rem;flex-wrap:wrap}
+  .level .links{margin-top:auto;display:flex;gap:.55rem;flex-wrap:wrap}
+  .btn{display:inline-block;padding:.42rem .95rem;border-radius:8px;font-size:.88rem;font-weight:600;border:1px solid var(--blue);color:var(--blue)}
+  .btn:hover{background:var(--chip-blue);text-decoration:none}
+  .btn.subtle{border-color:var(--line);color:var(--muted)}
+  .btn.subtle:hover{border-color:var(--muted);background:#f1f5f9}
+
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.4rem;overflow-x:auto}
+  .chips{display:flex;flex-wrap:wrap;gap:.5rem;min-width:max-content}
+  .chip{border-radius:99px;padding:.32rem .8rem;font-size:.86rem;font-weight:600;border:1.5px solid;white-space:nowrap}
+  .chip small{font-weight:400;opacity:.75}
+  .c-blue{color:var(--blue);border-color:#bfdbfe;background:var(--chip-blue)}
+  .c-green{color:var(--green);border-color:#bbf7d0;background:var(--chip-green)}
+  .c-orange{color:var(--orange);border-color:#fed7aa;background:var(--chip-orange)}
+  .c-purple{color:var(--purple);border-color:#ddd6fe;background:var(--chip-purple)}
+  .c-red{color:var(--red);border-color:#fecaca;background:var(--chip-red)}
+  .chip-arrow{align-self:center;color:#94a3b8;font-size:.9rem}
+  .legend{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem;font-size:.84rem;color:var(--muted)}
+  .legend i{display:inline-block;width:.8rem;height:.8rem;border-radius:3px;margin-right:.3rem;vertical-align:-1px}
+  .flow .note{margin-top:1rem;font-size:.88rem;color:var(--muted)}
+
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:.92rem}
+  .tablewrap{overflow-x:auto;border-radius:12px}
+  th,td{text-align:left;padding:.6rem .85rem;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f1f5f9;font-size:.84rem;letter-spacing:.03em;color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;border-radius:99px;padding:.06rem .6rem;font-size:.78rem;font-weight:700}
+  .pill.ok{background:var(--chip-green);color:var(--green)}
+  .pill.fix{background:var(--chip-orange);color:var(--orange)}
+  .pill.todo{background:#f1f5f9;color:var(--muted)}
+
+  .hlist{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.9rem}
+  .hitem{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:.45rem .75rem;font-size:.85rem;color:var(--muted)}
+  .hitem b{color:var(--ink);font-size:.83rem;margin-right:.35rem}
+  .hitem .pill{margin-left:.4rem}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));gap:1.1rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.3rem 1.4rem}
+  .card h3{margin-top:0}
+  .card .filelist{margin:.6rem 0 0;padding:0;list-style:none;font-size:.9rem;color:var(--muted)}
+  .card .filelist li{padding:.28rem 0;border-bottom:1px dashed var(--line)}
+  .card .filelist li:last-child{border-bottom:none}
+  .card .filelist code{background:none;border:none;padding:0;color:var(--blue)}
+  .qs{margin:.8rem 0 0;padding:0;list-style:none}
+  .qs li{margin:.45rem 0;padding:.6rem .8rem;background:var(--chip-blue);border-radius:10px;font-size:.92rem}
+  .qs li::before{content:"💬 ";}
+
+  footer{border-top:1px solid var(--line);padding:2.2rem 1.25rem;color:var(--muted);font-size:.88rem;background:var(--card)}
+  footer .inner{max-width:1080px;margin:0 auto;display:flex;gap:2rem;flex-wrap:wrap;justify-content:space-between}
+
+  @media (max-width:640px){
+    .hero{padding:3rem 1.1rem 2.4rem}
+    section{padding:2.4rem 0}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <span class="brand"><span class="dot"></span><span data-zh="部署实战教程" data-en="Deploy Tutorial"></span></span>
+    <span class="spacer"></span>
+    <button class="lang-btn" id="langToggle" type="button">English</button>
+    <a class="github" id="repoLink" href="#" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="inner">
+    <p class="kicker" data-zh="项目式课程 · 边做边学" data-en="Project-based · Learn by doing"></p>
+    <h1 data-zh="从第一次 SSH 登录,到推送即部署、失败自动回滚" data-en="From your first SSH login to push-to-deploy with automatic rollback"></h1>
+    <p class="lead" data-zh="一套三级递进的部署实战课程:初级把应用可靠地跑在一台服务器上,中级建成完整的自动部署管线,高级用实验决定蓝绿、CI 构建与灾备投入。每一行命令都告诉你为什么;每个结论都要有证据。" data-en="A three-level hands-on deployment course: keep an app reliably running on one server, build a full auto-deploy pipeline, then decide blue-green, CI builds and DR investments with experiments. Every command comes with the why; every conclusion requires evidence."></p>
+    <div class="cta">
+      <a class="primary" data-path="/tutorials/zh/01-beginner.md" href="#" data-zh="从初级开始(免费,需一台 ~$5 VPS)" data-en="Start at Beginner (needs a ~$5 VPS)"></a>
+      <a class="ghost" href="#path" data-zh="先看三级路线" data-en="See the 3-level path"></a>
+      <a class="ghost" href="#ai" data-zh="卡住了?问 AI 助教" data-en="Stuck? Ask the AI tutor"></a>
+    </div>
+    <div class="stats">
+      <div class="s"><b>3 × 2</b><span data-zh="三级教程 × 中英双语" data-en="levels × languages"></span></div>
+      <div class="s"><b>13</b><span data-zh="业界原则全部落地" data-en="principles, all covered"></span></div>
+      <div class="s"><b>11</b><span data-zh="设计假设逐一验证" data-en="hypotheses verified"></span></div>
+      <div class="s"><b>32</b><span data-zh="排错知识库条目" data-en="troubleshooting entries"></span></div>
+      <div class="s"><b>1</b><span data-zh="可运行示例应用(已验证)" data-en="runnable demo app (verified)"></span></div>
+    </div>
+  </div>
+</div>
+
+<main>
+
+<section id="why">
+  <p class="kicker" data-zh="写给谁" data-en="Who it's for"></p>
+  <h2 data-zh="这些场景,是不是很熟悉?" data-en="Do any of these sound familiar?"></h2>
+  <div class="pains">
+    <div class="pain"><b data-zh="「代码在我电脑上能跑」" data-en="“Works on my machine”"></b><br><span data-zh="不知道怎么放到服务器上、让它 7×24 常驻。" data-en="No idea how to put it on a server and keep it alive 24/7."></span></div>
+    <div class="pain"><b data-zh="「上线 = 半夜手忙脚乱」" data-en="“Releases = midnight panic”"></b><br><span data-zh="手动 scp + 重启,出问题靠 git reset 抢救。" data-en="Manual scp + restart; when it breaks, rescue by git reset."></span></div>
+    <div class="pain"><b data-zh="「回滚?什么回滚?」" data-en="“Rollback? What rollback?”"></b><br><span data-zh="新版本挂了只能现场 debug,用户都在看。" data-en="New version down, users watching, you debugging live."></span></div>
+    <div class="pain"><b data-zh="「备份应该没问题吧」" data-en="“Backups are probably fine”"></b><br><span data-zh="从来没有真的恢复过一次(这是最危险的一种自信)。" data-en="Never actually restored once (the most dangerous confidence)."></span></div>
+    <div class="pain"><b data-zh="「小公司,没有运维」" data-en="“Small company, no ops team”"></b><br><span data-zh="开发者兼职部署,需要一套不出事故的最小方案。" data-en="Devs doubling as ops; need a minimal incident-free setup."></span></div>
+    <div class="pain"><b data-zh="「要不要上 K8s?」" data-en="“Should we use K8s?”"></b><br><span data-zh="被人云亦云搞得焦虑,想有数据支撑的决策表。" data-en="FOMO-driven anxiety; want a data-backed decision table."></span></div>
+  </div>
+</section>
+
+<section id="path">
+  <p class="kicker" data-zh="学习路线" data-en="Learning path"></p>
+  <h2 data-zh="三级递进:每一级都解决上一级的痛点" data-en="Three levels; each fixes the pain of the last"></h2>
+  <div class="levels">
+
+    <div class="level">
+      <span class="tag" data-zh="初级 · BEGINNER" data-en="Level 1 · Beginner"></span>
+      <h3 data-zh="一台服务器、一个域名、一条 HTTPS 网址" data-en="One server, one domain, one HTTPS URL"></h3>
+      <p class="sub" data-zh="零基础可学,产出可直接日常使用的上线流程。" data-en="Zero experience required; produces a daily-usable go-live process."></p>
+      <ul>
+        <li data-zh="买 VPS、SSH 密钥、加固、防火墙(不锁死自己)" data-en="Buy a VPS, SSH keys, hardening, firewall (without locking yourself out)"></li>
+        <li data-zh="systemd 常驻 + Nginx 反代 + Let's Encrypt" data-en="systemd service + Nginx reverse proxy + Let's Encrypt"></li>
+        <li data-zh="每日备份 + 亲手做一次恢复演练(说出你的 RPO)" data-en="Daily backups + a hands-on restore drill (state your RPO)"></li>
+        <li data-zh="第一条部署脚本,以及它「八宗罪」的现场证据" data-en="Your first deploy script — and live evidence of its eight sins"></li>
+      </ul>
+      <details>
+        <summary data-zh="章节目录" data-en="Chapters"></summary>
+        <ol>
+          <li data-zh="术语速成班" data-en="Vocabulary crash course"></li>
+          <li data-zh="一台属于你的服务器" data-en="A server of your own"></li>
+          <li data-zh="认识 demo-app,本地跑起来" data-en="Meet demo-app, run it locally"></li>
+          <li data-zh="服务器安家" data-en="Set up house on the server"></li>
+          <li data-zh="systemd:永不缺席" data-en="systemd: always shows up"></li>
+          <li data-zh="Nginx + HTTPS" data-en="Nginx + HTTPS"></li>
+          <li data-zh="备份与恢复演练" data-en="Backups &amp; restore drill"></li>
+          <li data-zh="deploy-v0 与八宗罪" data-en="deploy-v0 and its eight sins"></li>
+        </ol>
+      </details>
+      <div class="meta"><span>⏱ 3–5h</span><span data-zh="前置:会用终端" data-en="Prereq: terminal basics"></span></div>
+      <div class="links">
+        <a class="btn" data-path="/tutorials/zh/01-beginner.md" href="#">中文</a>
+        <a class="btn subtle" data-path="/tutorials/en/01-beginner.md" href="#">English</a>
+      </div>
+    </div>
+
+    <div class="level m2">
+      <span class="tag" data-zh="中级 · INTERMEDIATE" data-en="Level 2 · Intermediate"></span>
+      <h3 data-zh="推送即部署,失败自动回滚" data-en="Push-to-deploy, automatic rollback"></h3>
+      <p class="sub" data-zh="把八宗罪逐条变成工程方案,git push 之后无人值守。" data-en="Turns each sin into an engineering fix; unattended after git push."></p>
+      <ul>
+        <li data-zh="SSH 强制命令 + sudoers 白名单:CI 钥匙泄露也读不走一个密钥" data-en="SSH forced command + sudoers whitelist: a leaked CI key exfiltrates nothing"></li>
+        <li data-zh="releases/&lt;SHA&gt; + current 软链,原子切换" data-en="releases/&lt;SHA&gt; + current symlink, switched atomically"></li>
+        <li data-zh="健康检查断言新版本 SHA + worker 心跳 + soak 窗口" data-en="Health checks assert the new SHA + worker heartbeat + soak window"></li>
+        <li data-zh="一等公民 rollback.sh:不依赖外网、不碰数据库、10 秒" data-en="First-class rollback.sh: offline-capable, never touches the DB, ~10s"></li>
+        <li data-zh="8 个「坏提交」剧本实操(坏迁移/坏启动/缺配置…)" data-en="Eight “bad commit” drills (bad migration / bad startup / missing env…)"></li>
+      </ul>
+      <div class="meta"><span>⏱ 4–6h</span><span data-zh="前置:初级毕业" data-en="Prereq: beginner done"></span></div>
+      <div class="links">
+        <a class="btn" data-path="/tutorials/zh/02-intermediate.md" href="#">中文</a>
+        <a class="btn subtle" data-path="/tutorials/en/02-intermediate.md" href="#">English</a>
+      </div>
+    </div>
+
+    <div class="level m3">
+      <span class="tag" data-zh="高级 · ADVANCED" data-en="Level 3 · Advanced"></span>
+      <h3 data-zh="对比、量化与升级决策" data-en="Experiments, measurements, upgrade decisions"></h3>
+      <p class="sub" data-zh="每个结论都有你自己的数据,包括「什么时候不上 K8s」。" data-en="Every conclusion backed by your own data — including when NOT to adopt K8s."></p>
+      <ul>
+        <li data-zh="蓝绿切换:把停机窗口压到 ≈0ms 并实测" data-en="Blue-green: squeeze the downtime window to ≈0ms, measured"></li>
+        <li data-zh="D1 在哪构建 / D2 Push vs Pull / D4 短期证书" data-en="D1 where to build / D2 push vs pull / D4 short-lived certs"></li>
+        <li data-zh="expand/contract 两阶段迁移与回滚安全矩阵" data-en="expand/contract two-phase migrations + rollback-safety matrix"></li>
+        <li data-zh="kill -9 实验室:五个时点制造事故看系统自愈" data-en="kill -9 lab: break things at five moments, watch self-healing"></li>
+        <li data-zh="RPO/RTO 实测表 + 升级决策记录(ADR)" data-en="Measured RPO/RTO tables + upgrade decision records"></li>
+      </ul>
+      <div class="meta"><span>⏱ 6–10h</span><span data-zh="前置:中级毕业 + 实验机" data-en="Prereq: intermediate done + a lab machine"></span></div>
+      <div class="links">
+        <a class="btn" data-path="/tutorials/zh/03-advanced.md" href="#">中文</a>
+        <a class="btn subtle" data-path="/tutorials/en/03-advanced.md" href="#">English</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section id="pipeline">
+  <p class="kicker" data-zh="核心产出" data-en="What you build"></p>
+  <h2 data-zh="中级毕业时,你拥有的部署管线" data-en="The deploy pipeline you'll own after Level 2"></h2>
+  <p data-zh="从 git push 到线上新版本,16 步全程无人值守;任何一步失败,线上要么毫发无损,要么自动回到旧版本。" data-en="From git push to a live new version in 16 unattended steps; on any failure, production either stays untouched or rolls itself back.">
+  </p>
+  <div class="flow">
+    <div class="chips">
+      <span class="chip c-green">freeze <small data-zh="紧急开关" data-en="kill switch"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-green">flock <small data-zh="串行锁" data-en="serialize"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-green">idempotent <small data-zh="幂等" data-en="idempotency"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-blue">verify <small data-zh="SHA∈main" data-en="SHA∈main"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-blue">preflight <small data-zh="磁盘/Node/锁文件" data-en="disk/Node/lockfile"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-blue">build <small>.partial</small></span><span class="chip-arrow">→</span>
+      <span class="chip c-blue">promote <small>releases/&lt;SHA&gt;</small></span><span class="chip-arrow">→</span>
+      <span class="chip c-orange">check-config <small data-zh="切换前预检" data-en="pre-switch"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-orange">backup <small data-zh="DB+文件" data-en="DB+files"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-orange">migrate <small data-zh="advisory lock" data-en="advisory lock"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-purple">switch <small data-zh="原子切换" data-en="atomic"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-purple">restart <small>web+worker</small></span><span class="chip-arrow">→</span>
+      <span class="chip c-purple">health <small data-zh="断言SHA+心跳+soak" data-en="assert SHA+hb+soak"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-red">rollback <small data-zh="失败自动回切" data-en="auto on failure"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-green">retain <small data-zh="保留策略" data-en="retention"></small></span><span class="chip-arrow">→</span>
+      <span class="chip c-green">audit <small data-zh="审计一行流" data-en="audit line"></small></span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--chip-green);border:1px solid #bbf7d0"></i><span data-zh="防线与收尾" data-en="guardrails &amp; bookkeeping"></span></span>
+      <span><i style="background:var(--chip-blue);border:1px solid #bfdbfe"></i><span data-zh="来源与构建" data-en="provenance &amp; build"></span></span>
+      <span><i style="background:var(--chip-orange);border:1px solid #fed7aa"></i><span data-zh="数据安全" data-en="data safety"></span></span>
+      <span><i style="background:var(--chip-purple);border:1px solid #ddd6fe"></i><span data-zh="切换与健康" data-en="switch &amp; health"></span></span>
+      <span><i style="background:var(--chip-red);border:1px solid #fecaca"></i><span data-zh="回滚" data-en="rollback"></span></span>
+    </div>
+    <p class="note" data-zh="每一步都有定义好的失败行为与退出码;逐行精读在中级第 7 章,五时点 kill -9 与整机重启的自愈验证在高级第 7 章。" data-en="Every step has a defined failure behavior and exit code; read line-by-line in Intermediate Ch.7, self-healing under kill -9 and reboot in Advanced Ch.7."></p>
+  </div>
+</section>
+
+<section id="coverage">
+  <p class="kicker" data-zh="设计源头与覆盖" data-en="Design source &amp; coverage"></p>
+  <h2 data-zh="不是拍脑袋:每条结论都对应一个可复现实验" data-en="Nothing hand-wavy: every claim maps to a reproducible experiment"></h2>
+  <p data-zh="课程源自一份「未验证的部署参考设计 + 13 条业界原则」。三级教程把它的 11 条假设逐一证实或修正,全部留证。" data-en="The course derives from an unverified reference design + 13 industry principles. Across three levels, its 11 hypotheses are each confirmed or fixed — with evidence."></p>
+
+  <div class="hlist">
+    <span class="hitem"><b>H1</b>TOCTOU<span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H2</b><span data-zh="备份范围与保留策略" data-en="backup scope &amp; retention"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H3</b><span data-zh="健康检查假阳性" data-en="false-positive health"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H4</b><span data-zh="重启窗口" data-en="restart window"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H5</b><span data-zh="并发/超时行为" data-en="concurrency/timeout"></span><span class="pill fix" data-zh="部分证实" data-en="partially"></span></span>
+    <span class="hitem"><b>H6</b><span data-zh="缺配置事后发现" data-en="late config discovery"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H7</b><span data-zh="生产机构建代价" data-en="build-on-prod cost"></span><span class="pill fix" data-zh="证实" data-en="confirmed"></span></span>
+    <span class="hitem"><b>H8</b><span data-zh="回滚非一等公民" data-en="rollback not first-class"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H9</b><span data-zh="日志/审计缺失" data-en="no logs/audit"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+    <span class="hitem"><b>H10</b><span data-zh="SSH 暴露面" data-en="SSH exposure"></span><span class="pill fix" data-zh="证实" data-en="confirmed"></span></span>
+    <span class="hitem"><b>H11</b><span data-zh="脚本漂移无检测" data-en="undetected script drift"></span><span class="pill fix" data-zh="证实→修正" data-en="confirmed→fixed"></span></span>
+  </div>
+
+  <h3 data-zh="原始设计文档 → 教程位置" data-en="Design document → where it's taught"></h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th data-zh="原始设计内容" data-en="Design doc section"></th><th data-zh="教程位置" data-en="Taught in"></th></tr></thead>
+    <tbody>
+      <tr><td data-zh="参考设计(强制命令/原子切换/健康检查/回滚)" data-en="Reference design (forced command / atomic switch / health / rollback)"></td><td><a data-path="/tutorials/zh/02-intermediate.md" href="#" data-zh="中级 第 2–7 章" data-en="Intermediate Ch.2–7"></a></td></tr>
+      <tr><td data-zh="D1 构建位置 / D2 触发通道 / D3 切换方式 / D4 凭证" data-en="D1 build location / D2 trigger / D3 switch / D4 credentials"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 2–5 章" data-en="Advanced Ch.2–5"></a></td></tr>
+      <tr><td data-zh="场景矩阵 A/B/C/D/E/F" data-en="Scenario matrix A/B/C/D/E/F"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="中级第 9 章(P0 剧场)+ 高级第 10 章(全表)" data-en="Intermediate Ch.9 (P0 drills) + Advanced Ch.10 (full matrix)"></a></td></tr>
+      <tr><td data-zh="度量(耗时/窗口/RPO/RTO/迁移行数)" data-en="Metrics (durations / window / RPO / RTO / ported lines)"></td><td><a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 1、6 章 + 第 11 章迁移证明" data-en="Advanced Ch.1 &amp; 6 + porting proof in Ch.11"></a></td></tr>
+      <tr><td data-zh="可迁移模板 + 第二技术栈" data-en="Portable template + a second stack"></td><td><code>demo-app/deploy/app.conf</code> + <a data-path="/tutorials/zh/03-advanced.md" href="#" data-zh="高级 第 11 章(Go,实测 ~15 行改动)" data-en="Advanced Ch.11 (Go, ~15 lines measured)"></a></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="demo">
+  <p class="kicker" data-zh="配套应用" data-en="Companion app"></p>
+  <h2 data-zh="demo-app:小到能读完源码,却踩遍部署的每条路径" data-en="demo-app: small enough to read fully, yet covers every deployment path"></h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 data-zh="为什么是它" data-en="Why this app"></h3>
+      <p style="color:var(--muted);font-size:.95rem" data-zh="web + worker 双进程、真实 Postgres、SQL 迁移(advisory lock)、文件存储、配置预检入口、构建注入 SHA —— 每个部署话题都有一个能亲手触发的实体。仓库里是完整可运行的参考实现,课程中你把它变成自己的第一个项目。" data-en="web + worker dual processes, real Postgres, SQL migrations (advisory lock), file storage, a config-preflight entrypoint, build-time SHA injection — every deployment topic has something touchable. The repo ships a complete verified reference; in the course you make it your first own project."></p>
+    </div>
+    <div class="card">
+      <h3 data-zh="端点即课程" data-en="Endpoints as coursework"></h3>
+      <ul class="filelist">
+        <li><code>GET /health/ready</code><span data-zh=" — 真实读写数据库:端口通了 ≠ 正常(P3)" data-en=" — real DB read/write: an open port ≠ healthy (P3)"></span></li>
+        <li><code>GET /version</code><span data-zh=" — 返回构建 SHA:部署后断言新版本在线(P3/P4)" data-en=" — build SHA: assert the new version is live (P3/P4)"></span></li>
+        <li><code>POST /api/notes</code><span data-zh=" — 入队任务:worker 队列与至少一次语义" data-en=" — enqueues a job: worker queue &amp; at-least-once"></span></li>
+        <li><code>POST /api/files</code><span data-zh=" — 写文件存储:备份范围不只数据库(P5)" data-en=" — writes file storage: backups ≠ DB only (P5)"></span></li>
+        <li><code>--check-config</code><span data-zh=" — 配置预检:缺变量在切换前被拦(E6)" data-en=" — config preflight: missing env caught pre-switch (E6)"></span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="ai">
+  <p class="kicker" data-zh="AI 助教" data-en="AI tutor"></p>
+  <h2 data-zh="卡住了?打开仓库,直接问 AI" data-en="Stuck? Open the repo and just ask an AI"></h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 data-zh="这个仓库是 AI-ready 的" data-en="This repo is AI-ready"></h3>
+      <p style="color:var(--muted);font-size:.95rem" data-zh="用任何能读仓库的 AI 助手(Claude Code、Cursor、Copilot 等)打开仓库根目录,大白话提问即可。AI 会遵循内置的助教协议:" data-en="Open the repo root in any repo-aware AI assistant (Claude Code, Cursor, Copilot…) and ask in plain language. The built-in tutor protocol ensures:"></p>
+      <ul class="filelist">
+        <li><span data-zh="先弄清你在哪一册哪一章(只问一句,不连环轰炸)" data-en="Locates your chapter first (one question, not an interrogation)"></span></li>
+        <li><span data-zh="一次只带你走一步:一条命令 + 预期输出,贴回结果再继续" data-en="One step at a time: one command + expected output, then wait"></span></li>
+        <li><span data-zh="不剧透后面阶段:超纲问题给一句话版 + 指路" data-en="No spoilers: out-of-scope questions get the one-liner + a pointer"></span></li>
+        <li><span data-zh="报错先查 T-01~T-32 排错库,按序排查并教方法" data-en="Errors route through the T-01~T-32 KB, method included"></span></li>
+        <li><span data-zh="绝不索要真实密钥;破坏性操作先确认实验机" data-en="Never asks for real secrets; destructive ops need lab confirmation"></span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 data-zh="试试这些问题" data-en="Try asking"></h3>
+      <ul class="qs">
+        <li data-zh="「ssh 报 Permission denied (publickey) 怎么办?」" data-en="“ssh says Permission denied (publickey) — what now?”"></li>
+        <li data-zh="「我在初级第 5 章,curl 域名返回 502」" data-en="“I'm on Beginner Ch.5; curl on my domain returns 502”"></li>
+        <li data-zh="「为什么教程要在生产机上构建?这样安全吗?」" data-en="“Why does the course build on the prod box? Is that safe?”"></li>
+        <li data-zh="「Actions 部署失败了,日志最后是 FAILED step=migrate」" data-en="“Actions deploy failed; last line is FAILED step=migrate”"></li>
+      </ul>
+      <p style="color:var(--muted);font-size:.88rem;margin-top:.9rem"><code>AGENTS.md</code> · <code>ai/stage-map.md</code> · <code>ai/troubleshooting.md</code> · <code>ai/faq.md</code></p>
+    </div>
+  </div>
+</section>
+
+<section id="transfer">
+  <p class="kicker" data-zh="可迁移性" data-en="Portability"></p>
+  <h2 data-zh="课程学完,怎么用到你自己的项目?" data-en="After the course — porting it to YOUR project"></h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 data-zh="换项目 ≈ 改一个配置文件" data-en="Porting ≈ editing one config"></h3>
+      <p style="color:var(--muted);font-size:.95rem"><code>demo-app/deploy/app.conf</code><span data-zh=" 集中了全部项目参数(应用名/用户/单元/健康检查 URL/构建与迁移命令/备份策略);Go、Python、Java 项目各自要改什么,中级第 11 章有清单。" data-en=" centralizes every project knob (app name/users/units/health URLs/build &amp; migrate commands/backup policy); per-stack checklists live in Intermediate Ch.11."></span></p>
+    </div>
+    <div class="card">
+      <h3 data-zh="迁移是「证明」的,不是「声称」的" data-en="Portability is proven, not claimed"></h3>
+      <p style="color:var(--muted);font-size:.95rem" data-zh="高级第 11 章把整套模板套到一个 40 行的 Go 迷你服务上并部署成功,实测改动:6 个文件、约 15 行。" data-en="Advanced Ch.11 ports the whole template onto a 40-line Go mini-service and deploys it: 6 files, ~15 changed lines, measured."></p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      <b data-zh="部署实战教程" data-en="Deploy Tutorial"></b><br>
+      <span data-zh="设计源头:一份未验证的参考设计 + 13 条业界原则,全部被证实或修正。" data-en="Design source: an unverified reference design + 13 industry principles — all confirmed or fixed."></span><br>
+      <a data-path="/deploy-experiment-prompt.md" href="#" data-zh="阅读原始设计文档" data-en="Read the original design doc"></a>
+    </div>
+    <div>
+      <b data-zh="延伸阅读" data-en="Further reading"></b><br>
+      <span>Amazon Builders' Library · 12-Factor App · Google SRE Ch.8</span><br>
+      <span data-zh="本页自包含、无外部依赖;同目录 llms.txt 供 AI agent 读取。" data-en="This page is self-contained; llms.txt beside it is for AI agents."></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ================= 链接配置(按托管方式二选一) =================
+   A) 本页独立托管在你的网站,教程等内容留在 GitHub:
+      设为 "https://github.com/<你的用户名>/<仓库名>/blob/main"
+   B) 整个仓库目录一起静态托管(如 GitHub Pages):
+      设为 ""(空字符串),链接将使用相对路径 */
+const REPO_BLOB_BASE = "https://github.com/your-username/deploy_tutorial/blob/main";
+const REPO_ROOT = REPO_BLOB_BASE.replace(/\/blob\/main$/, "");
+
+/* 按配置重写所有教程链接 */
+document.querySelectorAll("a[data-path]").forEach(a => {
+  a.href = REPO_BLOB_BASE + a.getAttribute("data-path");
+  a.target = "_blank"; a.rel = "noopener";
+});
+const repoLink = document.getElementById("repoLink");
+repoLink.href = REPO_ROOT || ".";
+
+/* ================= 中英切换 ================= */
+const html = document.documentElement;
+const btn = document.getElementById("langToggle");
+const apply = (lang) => {
+  html.lang = lang === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-zh]").forEach(el => {
+    el.textContent = el.dataset[lang];
+  });
+  document.title = lang === "zh"
+    ? "部署实战教程 — 从第一次 SSH 到推送即部署"
+    : "Deploy Tutorial — from your first SSH login to push-to-deploy";
+  btn.textContent = lang === "zh" ? "English" : "中文";
+  try { localStorage.setItem("dt-lang", lang); } catch (e) {}
+};
+btn.addEventListener("click", () => {
+  apply(html.lang.startsWith("zh") ? "en" : "zh");
+});
+let saved = null;
+try { saved = localStorage.getItem("dt-lang"); } catch (e) {}
+apply(saved || "zh");
+</script>
+</body>
+</html>
