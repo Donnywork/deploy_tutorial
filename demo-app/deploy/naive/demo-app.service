@@ -1,0 +1,18 @@
+# /etc/systemd/system/demo-app.service — 初级册的 v0 单元(单 web,无 release 结构)
+# 中级册会升级为 demo-app-web/worker + current 软链,此文件保留作对照。
+[Unit]
+Description=demo-app web (v0 naive)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+User=app
+Group=app
+WorkingDirectory=/srv/demo-app
+EnvironmentFile=/srv/demo-app/runtime.env
+ExecStart=/usr/bin/node /srv/demo-app/dist/server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

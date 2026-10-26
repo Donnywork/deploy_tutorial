@@ -1,0 +1,27 @@
+# /etc/systemd/system/demo-app-web.service — web 单元(中级版)
+# 教学点:
+# - WorkingDirectory 走 current 软链 → 原子切换后 restart 即新版本
+# - EnvironmentFile 由 root:app 0640 持有,deploy 用户读不到
+# - TimeoutStopSec 给优雅退出留时间(SIGTERM → 排干在途请求 → 退出)
+[Unit]
+Description=demo-app web (release-based)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+User=app
+Group=app
+WorkingDirectory=/srv/demo-app/current
+EnvironmentFile=/opt/demo-app/env/runtime.env
+ExecStart=/usr/bin/node /srv/demo-app/current/dist/server.js
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+# 最小加固(够用且不喧宾夺主;更多选项见 systemd.exec(5))
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

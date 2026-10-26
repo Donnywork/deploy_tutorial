@@ -1,0 +1,18 @@
+# /etc/sudoers.d/demo-app — deploy 用户的最小权限白名单(P7)。
+# 规则:改完必须 `sudo visudo -cf /etc/sudoers.d/demo-app` 通过才算完。
+# 注意 migrate-wrapper/check-config/healthcheck 的参数 glob 只是第一层
+# 防御(A4):脚本内部还会再验一次参数,纵深防御。
+
+deploy ALL=(root) NOPASSWD: /opt/demo-app/bin/backup.sh premigrate, \
+    /opt/demo-app/bin/backup.sh daily, \
+    /opt/demo-app/bin/backup.sh manual, \
+    /opt/demo-app/bin/migrate-wrapper.sh [0-9a-f]*, \
+    /opt/demo-app/bin/check-config.sh [0-9a-f]*, \
+    /opt/demo-app/bin/healthcheck.sh [0-9a-f]*, \
+    /opt/demo-app/bin/audit.sh *, \
+    /usr/bin/systemctl restart demo-app-web, \
+    /usr/bin/systemctl restart demo-app-worker, \
+    /usr/bin/systemctl restart demo-app-web.service, \
+    /usr/bin/systemctl restart demo-app-worker.service, \
+    /usr/bin/systemctl restart demo-app-web demo-app-worker, \
+    /usr/bin/systemctl restart demo-app-web.service demo-app-worker.service
