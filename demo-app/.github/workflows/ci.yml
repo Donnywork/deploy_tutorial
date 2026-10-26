@@ -1,0 +1,64 @@
+# ci.yml — CI(所有分支跑)+ 部署(仅 main,CI 通过后)
+# 教学点:
+# - 部署 job `needs: check`:CI 不过就不部署(参考设计的触发条件)
+# - workflow_dispatch 也只允许 main(deploy job 的 if 里强制)
+# - concurrency cancel-in-progress: false —— 不取消进行中的部署;
+#   排队行为的高级讨论(H5)见高级册
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run build
+        env:
+          GIT_SHA: ${{ github.sha }}
+      - name: config preflight works with dummy env
+        run: node dist/config.js --check-config
+        env:
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          APP_ENV: ci
+          STORAGE_DIR: /tmp
+
+  deploy:
+    needs: check
+    # 只允许 main(参考设计:workflow_dispatch 且只允许 main)
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20   # H5:超过 20 分钟 CI 判失败,但服务器侧部署仍在跑(setsid)
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH (forced command)
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          install -m 600 /dev/stdin ~/.ssh/id_ed25519 <<<"$KEY"
+          # A5:StrictHostKeyChecking=yes + 固定 host key = 服务器被替换/中间人时部署直接失败
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -i ~/.ssh/id_ed25519 "deploy@$HOST" "deploy $SHA"
