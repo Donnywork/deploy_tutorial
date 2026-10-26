@@ -1,0 +1,14 @@
+# dependencies / build output
+node_modules/
+dist/
+
+# runtime secrets — NEVER commit these
+.env
+runtime.env
+*.local
+
+# file storage (runtime data)
+storage/
+
+# OS junk
+.DS_Store

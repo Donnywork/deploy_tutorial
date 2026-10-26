@@ -1,0 +1,22 @@
+{
+  "name": "demo-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "dev": "node src/server.js",
+    "worker": "node src/worker.js",
+    "build": "node build.mjs",
+    "migrate": "node src/migrate.js",
+    "check-config": "node src/config.js --check-config",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}

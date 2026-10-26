@@ -1,0 +1,25 @@
+name: demo-app   # 固定 compose 项目名:不管 compose 文件在哪个目录,数据卷都叫 demo-app_pgdata
+
+# Postgres for demo-app, bound to localhost ONLY (never expose 5432 publicly).
+# The password lives in `.env` next to this file (git-ignored).
+services:
+  db:
+    image: postgres:16-alpine   # 浮动 tag 是教学取舍;生产建议钉死小版本,保证备份/恢复版本一致
+    container_name: demo-app-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: demo_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: demo_app
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo_app -d demo_app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
